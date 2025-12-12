@@ -1,0 +1,21 @@
+Client Request
+    ↓
+Routes (URL eşleştirme)
+    ↓
+Middleware (Auth, Validation, vb.)
+    ↓
+Controller (Request'i al, Service'i çağır)
+    ↓
+Service (İş mantığı, DB işlemleri)
+    ↓
+Model (Veri yapısı)
+    ↓
+Response dönüşü (Controller → Client)
+
+**Önerilen başlangıç sırası**
+1. Models/Types (İlk adım)
+2. Services (İkinci adım)
+3. Controllers (Üçüncü adım)
+4. Routes (Dördüncü adım)
+5. Middleware (Beşinci adım)
+6. Ana dosya (index.ts) - Son adım
