@@ -4,7 +4,7 @@ export type Client = {
   email: string;
   name: string | null;
   birthDate: string | null;
-  password: string;
+  password?: string;
   createdAt: string; // SQLite stores dates as strings
   updatedAt: string;
 };
@@ -14,7 +14,7 @@ export type CreateClientInput = {
   email: string;
   name?: string;
   birthDate?: string;
-  password: string;
+  password?: string;
 };
 
 export type UpdateClientInput = {

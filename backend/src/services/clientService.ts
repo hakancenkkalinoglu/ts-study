@@ -33,8 +33,11 @@ export const createClient = async (client: CreateClientInput) => {
       INSERT INTO clients (email, name, birthDate, password, createdAt, updatedAt)
       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
     `);
-  
-    const hashedPassword = await hashPassword(client.password);
+    
+    let hashedPassword: string | null = null;
+    if (client.password) {
+      hashedPassword = await hashPassword(client.password);
+    }
   
     const result = insertUser.run(
       client.email,
@@ -43,7 +46,7 @@ export const createClient = async (client: CreateClientInput) => {
       hashedPassword
     );
   
-  console.log('Inserted client Id', result.lastInsertRowid);
+    console.log('Inserted client Id', result.lastInsertRowid);
   
     return result.lastInsertRowid;
   };

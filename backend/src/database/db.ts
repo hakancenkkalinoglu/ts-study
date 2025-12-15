@@ -24,7 +24,7 @@ function initializeDatabase() {
       email TEXT,
       name TEXT,
       birthDate TEXT,
-      password TEXT NOT NULL,
+      password TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
     )

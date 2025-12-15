@@ -1,17 +1,17 @@
-import { createClient, deleteClientById } from './services/clientService.js';
-import type { CreateClientInput } from './models/Client.js';
+import express from 'express';
+import clientRoutes from './routes/clientRoutes.js';
 
-const client: CreateClientInput = {
-  email: 'cenk2@gmail.com',
-  name: 'cenk',
-  password: '123',
-};
+const app = express();
+const PORT = 3000;
 
-const main = async () => {
-  const result = await createClient(client);
-  console.log('result: ', result);
-};
+app.use(express.json());
 
-main().catch((err) => {
-  console.error('Error in main:', err);
+app.use('/api', clientRoutes);
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
