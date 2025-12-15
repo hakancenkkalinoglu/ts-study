@@ -1,6 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -12,11 +13,13 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "prisma": "^7.1.0",
+    "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@prisma/client": "^7.1.0",
+    "@types/bcrypt": "^6.0.0",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.5.0",
     "express": "^5.2.1"
   }
 }
