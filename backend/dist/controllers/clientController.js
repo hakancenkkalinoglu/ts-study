@@ -1,4 +1,4 @@
-import { createClient, deleteClientById, getAllClients, createNote, getNotesByClientId, } from '../services/clientService.js';
+import { createClient, deleteClientById, getAllClients, updateClient, createNote, getNotesByClientId, } from '../services/clientService.js';
 export const createClientHandler = async (req, res) => {
     try {
         const body = req.body;
@@ -34,6 +34,24 @@ export const deleteClientHandler = async (req, res) => {
     }
     catch (err) {
         console.error('Error deleting client:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const updateClientHandler = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({ message: 'Client id is required' });
+        }
+        const body = req.body;
+        const updated = await updateClient(id, body);
+        if (updated === 0) {
+            return res.status(404).json({ message: 'Client not found' });
+        }
+        res.json({ updated });
+    }
+    catch (err) {
+        console.error('Error updating client:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

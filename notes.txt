@@ -13,9 +13,40 @@ Model (Veri yapısı)
 Response dönüşü (Controller → Client)
 
 **Önerilen başlangıç sırası**
-1. Models/Types (İlk adım)
-2. Services (İkinci adım)
-3. Controllers (Üçüncü adım)
-4. Routes (Dördüncü adım)
-5. Middleware (Beşinci adım)
+1. Models/Types (İlk adım) ->  Verinin şeklini ve kurallarını tanımlamak.
+
+2. Services (İkinci adım) -> İş kurallarını (business logic) toplamak.
+            Kullanıcı kaydolurken şifreyi hash’lemek
+            Girişte token üretmek
+            Birden fazla tabloyu/servisi içeren karmaşık sorgular
+        Faydası: Controller’lar “ince”, service’ler “kalın” olur; test etmesi kolaylaşır.
+
+
+3. Controllers (Üçüncü adım) -> Bir HTTP isteğini alıp, doğru service çağrılarını yapmak ve cevabı hazırlamak.
+            req.body içinden veriyi alır
+            Gerekli service fonksiyonlarını çağırır (userService.createUser(...))
+            res.status(...).json(...) ile HTTP cevabını döner
+        Faydası: HTTP’ye özel mantık burada kalır; iş mantığına karışmaz.
+
+
+4. Routes (Dördüncü adım) -> Hangi URL hangi controller fonksiyonuna gidecek?” bilgisini tutmak.
+            POST /api/users -> userController.create
+            GET /api/users/:id -> userController.getById
+        Faydası: Uygulamanın API haritası net olur, controller kodunu routing’ten ayırırsın.
+
+5. Middleware (Beşinci adım) -> Amaç: İstek-response akışında araya girip ortak işlemleri yapmak.
+            Örnekler:
+            Auth kontrolü (JWT doğrulama)
+            Loglama
+            Hata yakalama (error handler)
+            CORS ayarları
+        Faydası: Aynı kontrolleri her route’a tek tek yazmak yerine merkezi bir yerde toplarsın.
+
+
+
+
 6. Ana dosya (index.ts) - Son adım
+
+
+
+

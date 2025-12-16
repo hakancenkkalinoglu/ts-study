@@ -3,10 +3,11 @@ import {
   createClient,
   deleteClientById,
   getAllClients,
+  updateClient,
   createNote,
   getNotesByClientId,
 } from '../services/clientService.js';
-import type { CreateClientInput } from '../models/Client.js';
+import type { CreateClientInput, UpdateClientInput } from '../models/Client.js';
 import type { CreateNoteInput } from '../models/Note.js';
 
 export const createClientHandler = async (req: Request, res: Response) => {
@@ -43,6 +44,27 @@ export const deleteClientHandler = async (req: Request, res: Response) => {
     res.json({ deleted });
   } catch (err) {
     console.error('Error deleting client:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const updateClientHandler = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: 'Client id is required' });
+    }
+
+    const body = req.body as UpdateClientInput;
+    const updated = await updateClient(id, body);
+
+    if (updated === 0) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    res.json({ updated });
+  } catch (err) {
+    console.error('Error updating client:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 };

@@ -32,6 +32,28 @@ export const createClient = async (client) => {
     console.log('Inserted client Id', result.lastInsertRowid);
     return result.lastInsertRowid;
 };
+export const updateClient = async (id, data) => {
+    const existing = await findClientById(id);
+    if (!existing) {
+        return 0;
+    }
+    let hashedPassword;
+    if (data.password) {
+        hashedPassword = await hashPassword(data.password);
+    }
+    const stmt = db.prepare(`
+    UPDATE clients
+    SET
+      email = COALESCE(?, email),
+      name = COALESCE(?, name),
+      birthDate = COALESCE(?, birthDate),
+      password = COALESCE(?, password),
+      updatedAt = datetime('now')
+    WHERE id = ?
+  `);
+    const result = stmt.run(data.email ?? null, data.name ?? null, data.birthDate ?? null, hashedPassword ?? null, id);
+    return result.changes;
+};
 export const deleteClientById = async (id) => {
     const client = await findClientById(id);
     if (!client) {
