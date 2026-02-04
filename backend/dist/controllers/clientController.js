@@ -1,4 +1,4 @@
-import { createClient, deleteClientById, getAllClients, updateClient, createNote, getNotesByClientId, getNotesByAppointmentId, createAppointment, getAppointmentsByClientId, getAllAppointments, } from '../services/clientService.js';
+import { createClient, deleteClientById, getAllClients, updateClient, createNote, getNotesByClientId, getNotesByAppointmentId, createAppointment, getAppointmentsByClientId, getAllAppointments, updateAppointment, deleteAppointmentById, } from '../services/clientService.js';
 export const createClientHandler = async (req, res) => {
     try {
         const body = req.body;
@@ -86,6 +86,10 @@ export const createAppointmentHandler = (req, res) => {
         res.status(201).json({ id });
     }
     catch (err) {
+        const message = err instanceof Error ? err.message : 'Internal server error';
+        if (message.includes('zaten bir randevu mevcut')) {
+            return res.status(409).json({ message });
+        }
         console.error('Error creating appointment:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -119,6 +123,41 @@ export const getAllAppointmentsHandler = (_req, res) => {
     }
     catch (err) {
         console.error('Error getting all appointments:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const updateAppointmentHandler = (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const appointmentId = Number(req.params.appointmentId);
+        const body = req.body;
+        const updated = updateAppointment(appointmentId, clientId, body);
+        if (updated === 0) {
+            return res.status(404).json({ message: 'Appointment not found' });
+        }
+        res.json({ updated });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : 'Internal server error';
+        if (message.includes('zaten bir randevu mevcut')) {
+            return res.status(409).json({ message });
+        }
+        console.error('Error updating appointment:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const deleteAppointmentHandler = (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const appointmentId = Number(req.params.appointmentId);
+        const deleted = deleteAppointmentById(appointmentId, clientId);
+        if (deleted === 0) {
+            return res.status(404).json({ message: 'Appointment not found' });
+        }
+        res.json({ deleted });
+    }
+    catch (err) {
+        console.error('Error deleting appointment:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

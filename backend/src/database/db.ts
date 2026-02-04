@@ -74,6 +74,26 @@ function initializeDatabase() {
     db.exec(`ALTER TABLE client_notes ADD COLUMN appointmentId INTEGER`);
   }
 
+  // Migration: Add appointmentTime column to appointments table if it doesn't exist
+  tableInfo = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+  const hasAppointmentTime = tableInfo.some((col) => col.name === 'appointmentTime');
+  if (!hasAppointmentTime) {
+    db.exec(`ALTER TABLE appointments ADD COLUMN appointmentTime TEXT DEFAULT '09:00'`);
+  }
+
+  // Migration: Add isPaid column to appointments table if it doesn't exist
+  tableInfo = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+  const hasIsPaid = tableInfo.some((col) => col.name === 'isPaid');
+  if (!hasIsPaid) {
+    db.exec(`ALTER TABLE appointments ADD COLUMN isPaid INTEGER DEFAULT 0`);
+  }
+
+  // Migration: Add agreedFee column to clients table if it doesn't exist
+  tableInfo = db.prepare("PRAGMA table_info(clients)").all() as { name: string }[];
+  const hasAgreedFee = tableInfo.some((col) => col.name === 'agreedFee');
+  if (!hasAgreedFee) {
+    db.exec(`ALTER TABLE clients ADD COLUMN agreedFee INTEGER DEFAULT 2000`);
+  }
 }
 
 // Initialize the database

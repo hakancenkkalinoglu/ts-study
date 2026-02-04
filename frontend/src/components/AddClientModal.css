@@ -9,16 +9,21 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .modal-content {
   background: var(--bg-secondary);
   border-radius: 12px;
   padding: 0;
-  width: 90%;
+  width: 100%;
   max-width: 500px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
   animation: slideIn 0.3s ease-out;
+  margin: auto;
 }
 
 @keyframes slideIn {
@@ -99,6 +104,76 @@
   border-color: var(--accent-color);
 }
 
+.form-group select,
+.form-select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.form-group select:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+/* Toggle switch - Ödeme Yapıldı mı */
+.form-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-color);
+  border-radius: 28px;
+  transition: 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent-color);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+}
+
 .error-message {
   background: #fee;
   color: #c33;
@@ -113,6 +188,19 @@
   gap: 12px;
   justify-content: flex-end;
   margin-top: 24px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.modal-actions-with-delete {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.modal-actions-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .btn-primary,
@@ -148,4 +236,72 @@
 
 .btn-secondary:hover {
   background: var(--border-color);
+}
+
+.btn-danger {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #c33;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a22;
+  transform: translateY(-1px);
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Responsive - zoom / küçük ekran */
+@media (max-width: 600px) {
+  .modal-overlay {
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  .modal-content {
+    max-height: calc(100vh - 24px);
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-header h2 {
+    font-size: 20px;
+  }
+
+  .modal-content form {
+    padding: 16px;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 10px 18px;
+    font-size: 15px;
+  }
+
+  .modal-actions-with-delete {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-actions-with-delete .btn-danger {
+    order: 3;
+    margin-top: 8px;
+  }
+
+  .modal-actions-group {
+    order: 1;
+    justify-content: flex-end;
+  }
 }

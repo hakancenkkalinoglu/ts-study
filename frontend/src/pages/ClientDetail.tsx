@@ -1,30 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getClients, getClientNotes, createNote } from '../services/api';
-import type { Client, Note } from '../types';
+import {
+  getClients,
+  getClientNotes,
+  getAppointments,
+  getAppointmentNotes,
+  createAppointment,
+  createAppointmentNote,
+  updateAppointment,
+  deleteAppointment,
+} from '../services/api';
+import type { Client, Note, Appointment } from '../types';
 import './ClientDetail.css';
 
 export const ClientDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [client, setClient] = useState<Client | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [notesByAppointment, setNotesByAppointment] = useState<Record<number, Note[]>>({});
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
+  const [showAllNotesModal, setShowAllNotesModal] = useState(false);
+  const [expandedAppointments, setExpandedAppointments] = useState<Set<number>>(new Set());
+  const [showNoteFormFor, setShowNoteFormFor] = useState<number | null>(null);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [appointmentForm, setAppointmentForm] = useState({
+    appointmentDate: new Date().toISOString().split('T')[0],
+    appointmentTime: '09:00',
+    title: '',
+    isPaid: false,
+  });
   const [noteForm, setNoteForm] = useState({
     title: '',
     content: '',
     noteDate: new Date().toISOString().split('T')[0],
   });
-  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      loadClientData();
-    }
-  }, [id]);
-
-  const loadClientData = async () => {
+  const loadClientData = useCallback(async () => {
     if (!id) return;
     try {
       setLoading(true);
@@ -32,30 +48,138 @@ export const ClientDetail = () => {
       const foundClient = clients.find((c) => c.id === Number(id));
       if (foundClient) {
         setClient(foundClient);
-        const clientNotes = await getClientNotes(foundClient.id);
-        setNotes(clientNotes);
+        const [appointmentsData, notesData] = await Promise.all([
+          getAppointments(foundClient.id),
+          getClientNotes(foundClient.id),
+        ]);
+        setAppointments(appointmentsData);
+        setAllNotes(notesData);
+
+        const notesMap: Record<number, Note[]> = {};
+        await Promise.all(
+          appointmentsData.map(async (apt) => {
+            const notes = await getAppointmentNotes(foundClient.id, apt.id);
+            notesMap[apt.id] = notes;
+          })
+        );
+        setNotesByAppointment(notesMap);
       }
     } catch (error) {
       console.error('Error loading client data:', error);
     } finally {
       setLoading(false);
     }
+  }, [id]);
+
+  useEffect(() => {
+    if (id) loadClientData();
+  }, [id, loadClientData]);
+
+  const handleAddAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client) return;
+
+    try {
+      setSubmitting(true);
+      await createAppointment({
+        clientId: client.id,
+        appointmentDate: appointmentForm.appointmentDate,
+        appointmentTime: appointmentForm.appointmentTime,
+        title: appointmentForm.title || undefined,
+        isPaid: appointmentForm.isPaid,
+      });
+      setAppointmentForm({
+        appointmentDate: new Date().toISOString().split('T')[0],
+        appointmentTime: '09:00',
+        title: '',
+        isPaid: false,
+      });
+      setShowAppointmentForm(false);
+      loadClientData();
+    } catch (error: unknown) {
+      console.error('Error adding appointment:', error);
+      const message = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : null;
+      alert(message || 'Randevu eklenirken bir hata oluştu.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
+  const handleUpdateAppointment = async (appointmentId: number, e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!client) return;
+
+    try {
+      setSubmitting(true);
+      await updateAppointment(client.id, appointmentId, {
+        appointmentDate: appointmentForm.appointmentDate,
+        appointmentTime: appointmentForm.appointmentTime,
+        title: appointmentForm.title || undefined,
+        isPaid: appointmentForm.isPaid,
+      });
+      setEditingAppointmentId(null);
+      setAppointmentForm({
+        appointmentDate: new Date().toISOString().split('T')[0],
+        appointmentTime: '09:00',
+        title: '',
+        isPaid: false,
+      });
+      loadClientData();
+    } catch (error: unknown) {
+      console.error('Error updating appointment:', error);
+      const message = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : null;
+      alert(message || 'Randevu güncellenirken bir hata oluştu.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteAppointment = async (appointmentId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!client) return;
+    if (!window.confirm('Bu randevuyu silmek istediğinize emin misiniz? Randevuya ait notlar da silinecektir.')) return;
+
+    try {
+      await deleteAppointment(client.id, appointmentId);
+      setEditingAppointmentId(null);
+      loadClientData();
+    } catch (error) {
+      console.error('Error deleting appointment:', error);
+      alert('Randevu silinirken bir hata oluştu.');
+    }
+  };
+
+  const startEditAppointment = (apt: Appointment, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedAppointments((prev) => new Set(prev).add(apt.id));
+    setEditingAppointmentId(apt.id);
+    const dateStr = apt.appointmentDate.includes('T') ? apt.appointmentDate.split('T')[0] : apt.appointmentDate;
+    setAppointmentForm({
+      appointmentDate: dateStr,
+      appointmentTime: apt.appointmentTime || '09:00',
+      title: apt.title || '',
+      isPaid: !!(apt.isPaid ?? 0),
+    });
+  };
+
+  const handleAddNoteToAppointment = async (appointmentId: number, e: React.FormEvent) => {
     e.preventDefault();
     if (!client || !noteForm.content) return;
 
     try {
       setSubmitting(true);
-      await createNote({
-        clientId: client.id,
+      await createAppointmentNote(client.id, appointmentId, {
         title: noteForm.title || undefined,
         content: noteForm.content,
         noteDate: noteForm.noteDate,
       });
       setNoteForm({ title: '', content: '', noteDate: new Date().toISOString().split('T')[0] });
-      setShowNoteForm(false);
+      setShowNoteFormFor(null);
       loadClientData();
     } catch (error) {
       console.error('Error adding note:', error);
@@ -63,6 +187,15 @@ export const ClientDetail = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const toggleAppointmentExpand = (aptId: number) => {
+    setExpandedAppointments((prev) => {
+      const next = new Set(prev);
+      if (next.has(aptId)) next.delete(aptId);
+      else next.add(aptId);
+      return next;
+    });
   };
 
   const formatDate = (dateString: string | null) => {
@@ -113,82 +246,335 @@ export const ClientDetail = () => {
             <span className="info-value">{formatDate(client.birthDate)}</span>
           </div>
           <div className="info-item">
+            <span className="info-label">Anlaşılan Ücret:</span>
+            <span className="info-value">
+              {client.agreedFee != null ? `${client.agreedFee.toLocaleString('tr-TR')} ₺` : '-'}
+            </span>
+          </div>
+          <div className="info-item">
             <span className="info-label">Kayıt Tarihi:</span>
             <span className="info-value">{formatDate(client.createdAt)}</span>
           </div>
         </div>
       </div>
 
-      <div className="notes-section">
-        <div className="notes-header">
-          <h2>Randevu Notları</h2>
-          <button
-            className="add-note-button"
-            onClick={() => setShowNoteForm(!showNoteForm)}
-          >
-            {showNoteForm ? 'İptal' : '+ Yeni Not Ekle'}
-          </button>
+      <div className="appointments-section">
+        <div className="section-header">
+          <h2>Randevular</h2>
+          <div className="section-actions">
+            <button
+              className="all-notes-button"
+              onClick={() => setShowAllNotesModal(true)}
+              title="Danışanın tüm notlarını görüntüle"
+            >
+              Tüm Notları Gör
+            </button>
+            <button
+              className="add-note-button"
+              onClick={() => setShowAppointmentForm(!showAppointmentForm)}
+            >
+              {showAppointmentForm ? 'İptal' : '+ Randevu Ekle'}
+            </button>
+          </div>
         </div>
 
-        {showNoteForm && (
-          <form className="note-form" onSubmit={handleAddNote}>
+        {showAppointmentForm && (
+          <form className="note-form appointment-form" onSubmit={handleAddAppointment}>
             <div className="form-group">
-              <label>Başlık</label>
-              <input
-                type="text"
-                value={noteForm.title}
-                onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
-                placeholder="Not başlığı (opsiyonel)"
-              />
-            </div>
-            <div className="form-group">
-              <label>İçerik *</label>
-              <textarea
-                value={noteForm.content}
-                onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
-                placeholder="Not içeriği..."
-                rows={5}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Tarih</label>
+              <label>Randevu Tarihi *</label>
               <input
                 type="date"
-                value={noteForm.noteDate}
-                onChange={(e) => setNoteForm({ ...noteForm, noteDate: e.target.value })}
+                value={appointmentForm.appointmentDate}
+                onChange={(e) =>
+                  setAppointmentForm({ ...appointmentForm, appointmentDate: e.target.value })
+                }
                 required
               />
             </div>
+            <div className="form-group">
+              <label>Randevu Saati *</label>
+              <input
+                type="time"
+                value={appointmentForm.appointmentTime}
+                onChange={(e) =>
+                  setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Başlık (opsiyonel)</label>
+              <input
+                type="text"
+                value={appointmentForm.title}
+                onChange={(e) => setAppointmentForm({ ...appointmentForm, title: e.target.value })}
+                placeholder="Örn: İlk görüşme"
+              />
+            </div>
+            <div className="form-group form-group-toggle">
+              <label>Ödeme Yapıldı mı?</label>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={appointmentForm.isPaid}
+                  onChange={(e) =>
+                    setAppointmentForm({ ...appointmentForm, isPaid: e.target.checked })
+                  }
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
             <button type="submit" className="submit-button" disabled={submitting}>
-              {submitting ? 'Ekleniyor...' : 'Not Ekle'}
+              {submitting ? 'Ekleniyor...' : 'Randevu Ekle'}
             </button>
           </form>
         )}
 
-        {notes.length === 0 ? (
+        {appointments.length === 0 ? (
           <div className="empty-notes">
-            <p>Henüz not eklenmemiş.</p>
+            <p>Henüz randevu eklenmemiş.</p>
+            <p className="empty-hint">Randevu ekledikten sonra her randevuya not ekleyebilirsiniz.</p>
           </div>
         ) : (
-          <div className="notes-list">
-            {notes.map((note) => (
-              <div key={note.id} className="note-card">
-                <div className="note-header">
-                  <h3>{note.title || 'Başlıksız Not'}</h3>
-                  <span className="note-date">{formatDate(note.noteDate)}</span>
+          <div className="appointments-list">
+            {appointments.map((apt) => (
+              <div key={apt.id} className="appointment-card">
+                <div
+                  className="appointment-header"
+                  onClick={() => toggleAppointmentExpand(apt.id)}
+                >
+                  <div className="appointment-info">
+                    <span className="appointment-date">{formatDate(apt.appointmentDate)}</span>
+                    {apt.appointmentTime && (
+                      <span className="appointment-time">{apt.appointmentTime}</span>
+                    )}
+                    {apt.title && <span className="appointment-title">— {apt.title}</span>}
+                    <span className={`appointment-paid-badge ${(apt.isPaid ?? 0) ? 'paid' : 'unpaid'}`}>
+                      {(apt.isPaid ?? 0) ? 'Ödeme Yapıldı' : 'Ödeme Bekliyor'}
+                    </span>
+                  </div>
+                  <div className="appointment-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="edit-apt-button"
+                      onClick={(e) => startEditAppointment(apt, e)}
+                      title="Düzenle"
+                    >
+                      Düzenle
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-apt-button"
+                      onClick={(e) => handleDeleteAppointment(apt.id, e)}
+                      title="Sil"
+                    >
+                      Sil
+                    </button>
+                    <span className="expand-icon">{expandedAppointments.has(apt.id) ? '▼' : '▶'}</span>
+                  </div>
                 </div>
-                <p className="note-content">{note.content}</p>
-                <div className="note-footer">
-                  <span className="note-created">
-                    Oluşturulma: {formatDate(note.createdAt)}
-                  </span>
-                </div>
+
+                {expandedAppointments.has(apt.id) && (
+                  <div className="appointment-notes">
+                    {editingAppointmentId === apt.id ? (
+                      <form
+                        className="note-form inline-note-form"
+                        onSubmit={(e) => handleUpdateAppointment(apt.id, e)}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="form-group">
+                          <label>Randevu Tarihi *</label>
+                          <input
+                            type="date"
+                            value={appointmentForm.appointmentDate}
+                            onChange={(e) =>
+                              setAppointmentForm({ ...appointmentForm, appointmentDate: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Randevu Saati *</label>
+                          <input
+                            type="time"
+                            value={appointmentForm.appointmentTime}
+                            onChange={(e) =>
+                              setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Başlık (opsiyonel)</label>
+                          <input
+                            type="text"
+                            value={appointmentForm.title}
+                            onChange={(e) =>
+                              setAppointmentForm({ ...appointmentForm, title: e.target.value })
+                            }
+                            placeholder="Örn: İlk görüşme"
+                          />
+                        </div>
+                        <div className="form-group form-group-toggle">
+                          <label>Ödeme Yapıldı mı?</label>
+                          <label className="toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={appointmentForm.isPaid}
+                              onChange={(e) =>
+                                setAppointmentForm({ ...appointmentForm, isPaid: e.target.checked })
+                              }
+                            />
+                            <span className="toggle-slider" />
+                          </label>
+                        </div>
+                        <div className="form-actions-inline">
+                          <button type="submit" className="submit-button" disabled={submitting}>
+                            {submitting ? 'Kaydediliyor...' : 'Kaydet'}
+                          </button>
+                          <button
+                            type="button"
+                            className="cancel-button"
+                            onClick={() => {
+                              setEditingAppointmentId(null);
+                              setAppointmentForm({
+                                appointmentDate: new Date().toISOString().split('T')[0],
+                                appointmentTime: '09:00',
+                                title: '',
+                                isPaid: false,
+                              });
+                            }}
+                          >
+                            İptal
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                    <div className="notes-in-appointment-header">
+                      <span>Randevu Notları</span>
+                      <button
+                        type="button"
+                        className="add-note-inline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowNoteFormFor(showNoteFormFor === apt.id ? null : apt.id);
+                        }}
+                      >
+                        {showNoteFormFor === apt.id ? 'İptal' : '+ Not Ekle'}
+                      </button>
+                    </div>
+
+                    {showNoteFormFor === apt.id && (
+                      <form
+                        className="note-form inline-note-form"
+                        onSubmit={(e) => handleAddNoteToAppointment(apt.id, e)}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="form-group">
+                          <label>Başlık (opsiyonel)</label>
+                          <input
+                            type="text"
+                            value={noteForm.title}
+                            onChange={(e) =>
+                              setNoteForm({ ...noteForm, title: e.target.value })
+                            }
+                            placeholder="Not başlığı"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>İçerik *</label>
+                          <textarea
+                            value={noteForm.content}
+                            onChange={(e) =>
+                              setNoteForm({ ...noteForm, content: e.target.value })
+                            }
+                            placeholder="Not içeriği..."
+                            rows={4}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tarih</label>
+                          <input
+                            type="date"
+                            value={noteForm.noteDate}
+                            onChange={(e) =>
+                              setNoteForm({ ...noteForm, noteDate: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <button type="submit" className="submit-button" disabled={submitting}>
+                          {submitting ? 'Ekleniyor...' : 'Not Ekle'}
+                        </button>
+                      </form>
+                    )}
+
+                    {notesByAppointment[apt.id]?.length === 0 ? (
+                      <p className="no-notes-in-apt">
+                        Bu randevuya henüz not eklenmemiş.
+                      </p>
+                    ) : (
+                      <div className="notes-list">
+                        {(notesByAppointment[apt.id] || []).map((note) => (
+                          <div key={note.id} className="note-card">
+                            <div className="note-header">
+                              <h3>{note.title || 'Başlıksız Not'}</h3>
+                              <span className="note-date">{formatDate(note.noteDate)}</span>
+                            </div>
+                            <p className="note-content">{note.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {showAllNotesModal && (
+        <div className="modal-overlay" onClick={() => setShowAllNotesModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Danışanın Tüm Notları</h2>
+              <button
+                className="modal-close"
+                onClick={() => setShowAllNotesModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              {allNotes.length === 0 ? (
+                <p className="empty-notes">Henüz not eklenmemiş.</p>
+              ) : (
+                <div className="notes-list">
+                  {allNotes.map((note) => (
+                    <div key={note.id} className="note-card">
+                      <div className="note-header">
+                        <h3>{note.title || 'Başlıksız Not'}</h3>
+                        <span className="note-date">{formatDate(note.noteDate)}</span>
+                      </div>
+                      <p className="note-content">{note.content}</p>
+                      <div className="note-footer">
+                        <span className="note-created">
+                          Oluşturulma: {formatDate(note.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

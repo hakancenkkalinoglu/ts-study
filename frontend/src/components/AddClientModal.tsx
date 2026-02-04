@@ -13,6 +13,7 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
     email: '',
     name: '',
     birthDate: '',
+    agreedFee: 2000,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +30,10 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
         email: formData.email,
         name: formData.name || undefined,
         birthDate: formData.birthDate || undefined,
+        agreedFee: formData.agreedFee,
       });
       onSuccess();
-      setFormData({ email: '', name: '', birthDate: '' });
+      setFormData({ email: '', name: '', birthDate: '', agreedFee: 2000 });
       onClose();
     } catch (err) {
       setError('Danışan eklenirken bir hata oluştu.');
@@ -75,6 +77,17 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
               id="birthDate"
               value={formData.birthDate}
               onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="agreedFee">Anlaşılan Ücret (₺)</label>
+            <input
+              type="number"
+              id="agreedFee"
+              min={0}
+              step={100}
+              value={formData.agreedFee}
+              onChange={(e) => setFormData({ ...formData, agreedFee: Number(e.target.value) || 0 })}
             />
           </div>
           {error && <div className="error-message">{error}</div>}

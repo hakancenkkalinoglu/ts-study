@@ -21,14 +21,14 @@ export const findClientById = async (id) => {
 };
 export const createClient = async (client) => {
     const insertUser = db.prepare(`
-      INSERT INTO clients (email, name, birthDate, password, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+      INSERT INTO clients (email, name, birthDate, agreedFee, password, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `);
     let hashedPassword = null;
     if (client.password) {
         hashedPassword = await hashPassword(client.password);
     }
-    const result = insertUser.run(client.email, client.name ?? null, client.birthDate ?? null, hashedPassword);
+    const result = insertUser.run(client.email, client.name ?? null, client.birthDate ?? null, client.agreedFee ?? 2000, hashedPassword);
     console.log('Inserted client Id', result.lastInsertRowid);
     return result.lastInsertRowid;
 };
@@ -47,11 +47,12 @@ export const updateClient = async (id, data) => {
       email = COALESCE(?, email),
       name = COALESCE(?, name),
       birthDate = COALESCE(?, birthDate),
+      agreedFee = CASE WHEN ? IS NOT NULL THEN ? ELSE agreedFee END,
       password = COALESCE(?, password),
       updatedAt = datetime('now')
     WHERE id = ?
   `);
-    const result = stmt.run(data.email ?? null, data.name ?? null, data.birthDate ?? null, hashedPassword ?? null, id);
+    const result = stmt.run(data.email ?? null, data.name ?? null, data.birthDate ?? null, data.agreedFee ?? null, data.agreedFee ?? null, hashedPassword ?? null, id);
     return result.changes;
 };
 export const deleteClientById = async (id) => {
@@ -77,26 +78,81 @@ export const getAllClients = (search) => {
     const stmt = db.prepare(`SELECT * FROM clients ORDER BY name ASC`);
     return stmt.all();
 };
+const normalizeDate = (d) => (d.includes('T') ? (d.split('T')[0] ?? d) : d).slice(0, 10);
+const normalizeTime = (t) => (t || '09:00').slice(0, 5);
+export const hasAppointmentAtDateTime = (appointmentDate, appointmentTime, excludeId) => {
+    const dateStr = normalizeDate(appointmentDate);
+    const timeStr = normalizeTime(appointmentTime);
+    const datePattern = dateStr + '%';
+    const timePattern = timeStr + '%';
+    let existing;
+    if (excludeId != null) {
+        existing = db.prepare(`
+      SELECT id FROM appointments
+      WHERE appointmentDate LIKE ? AND appointmentTime LIKE ? AND id != ?
+    `).get(datePattern, timePattern, excludeId);
+    }
+    else {
+        existing = db.prepare(`
+      SELECT id FROM appointments
+      WHERE appointmentDate LIKE ? AND appointmentTime LIKE ?
+    `).get(datePattern, timePattern);
+    }
+    return !!existing;
+};
 export const createAppointment = (input) => {
+    const dateStr = normalizeDate(input.appointmentDate);
+    const timeStr = normalizeTime(input.appointmentTime ?? '09:00');
+    if (hasAppointmentAtDateTime(dateStr, timeStr)) {
+        throw new Error('Bu tarih ve saatte zaten bir randevu mevcut.');
+    }
     const stmt = db.prepare(`
-    INSERT INTO appointments (clientId, appointmentDate, title, createdAt, updatedAt)
-    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+    INSERT INTO appointments (clientId, appointmentDate, appointmentTime, title, isPaid, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `);
-    const result = stmt.run(input.clientId, input.appointmentDate, input.title ?? null);
+    const result = stmt.run(input.clientId, dateStr, timeStr, input.title ?? null, input.isPaid ? 1 : 0);
     return result.lastInsertRowid;
 };
 export const getAppointmentsByClientId = (clientId) => {
     const stmt = db.prepare(`
-    SELECT * FROM appointments WHERE clientId = ? ORDER BY appointmentDate DESC
+    SELECT * FROM appointments WHERE clientId = ? ORDER BY appointmentDate DESC, appointmentTime ASC
   `);
     return stmt.all(clientId);
 };
+export const updateAppointment = (appointmentId, clientId, data) => {
+    const current = db.prepare(`SELECT appointmentDate, appointmentTime FROM appointments WHERE id = ? AND clientId = ?`).get(appointmentId, clientId);
+    if (!current)
+        return 0;
+    const newDate = data.appointmentDate != null ? normalizeDate(data.appointmentDate) : normalizeDate(current.appointmentDate);
+    const newTime = data.appointmentTime != null ? normalizeTime(data.appointmentTime) : normalizeTime(current.appointmentTime);
+    if (hasAppointmentAtDateTime(newDate, newTime, appointmentId)) {
+        throw new Error('Bu tarih ve saatte zaten bir randevu mevcut.');
+    }
+    const stmt = db.prepare(`
+    UPDATE appointments
+    SET
+      appointmentDate = COALESCE(?, appointmentDate),
+      appointmentTime = COALESCE(?, appointmentTime),
+      title = COALESCE(?, title),
+      isPaid = CASE WHEN ? IS NOT NULL THEN ? ELSE isPaid END,
+      updatedAt = datetime('now')
+    WHERE id = ? AND clientId = ?
+  `);
+    const isPaidVal = data.isPaid != null ? (data.isPaid ? 1 : 0) : null;
+    const result = stmt.run(data.appointmentDate ?? null, data.appointmentTime ?? null, data.title ?? null, isPaidVal, isPaidVal, appointmentId, clientId);
+    return result.changes;
+};
+export const deleteAppointmentById = (appointmentId, clientId) => {
+    const stmt = db.prepare(`DELETE FROM appointments WHERE id = ? AND clientId = ?`);
+    const result = stmt.run(appointmentId, clientId);
+    return result.changes;
+};
 export const getAllAppointments = () => {
     const stmt = db.prepare(`
-    SELECT a.*, c.name as clientName
+    SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
     FROM appointments a
     LEFT JOIN clients c ON a.clientId = c.id
-    ORDER BY a.appointmentDate ASC
+    ORDER BY a.appointmentDate ASC, a.appointmentTime ASC
   `);
     return stmt.all();
 };

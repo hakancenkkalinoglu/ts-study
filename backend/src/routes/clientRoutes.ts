@@ -10,6 +10,8 @@ import {
   getAppointmentsHandler,
   getAppointmentNotesHandler,
   getAllAppointmentsHandler,
+  updateAppointmentHandler,
+  deleteAppointmentHandler,
 } from '../controllers/clientController.js';
 
 const router = express.Router();
@@ -33,6 +35,8 @@ router.get('/appointments', getAllAppointmentsHandler);
 // Appointments for a client
 router.get('/clients/:clientId/appointments', getAppointmentsHandler);
 router.post('/clients/:clientId/appointments', createAppointmentHandler);
+router.put('/clients/:clientId/appointments/:appointmentId', updateAppointmentHandler);
+router.delete('/clients/:clientId/appointments/:appointmentId', deleteAppointmentHandler);
 
 // Notes for an appointment
 router.get('/clients/:clientId/appointments/:appointmentId/notes', getAppointmentNotesHandler);

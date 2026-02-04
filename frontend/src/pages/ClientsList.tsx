@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getClients, deleteClient } from '../services/api';
 import type { Client } from '../types';
@@ -9,23 +9,30 @@ export const ClientsList = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadClients();
-  }, []);
+    const timer = setTimeout(() => setSearchDebounced(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const loadClients = async () => {
+  const loadClients = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getClients();
+      const data = await getClients(searchDebounced || undefined);
       setClients(data);
     } catch (error) {
       console.error('Error loading clients:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchDebounced]);
+
+  useEffect(() => {
+    loadClients();
+  }, [loadClients]);
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -56,18 +63,32 @@ export const ClientsList = () => {
   return (
     <div className="clients-container">
       <div className="clients-header">
-        <h1>Danışanlar</h1>
-        <button className="add-button" onClick={() => setIsModalOpen(true)}>
-          + Yeni Danışan Ekle
-        </button>
+        <div className="clients-header-actions">
+          <input
+            type="search"
+            placeholder="Danışan ara (ad, e-posta)..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="search-input"
+          />
+          <button className="add-button" onClick={() => setIsModalOpen(true)}>
+            + Yeni Danışan Ekle
+          </button>
+        </div>
       </div>
 
       {clients.length === 0 ? (
         <div className="empty-state">
-          <p>Henüz danışan eklenmemiş.</p>
-          <button className="add-button" onClick={() => setIsModalOpen(true)}>
-            İlk Danışanı Ekle
-          </button>
+          <p>
+            {searchDebounced
+              ? 'Aramanızla eşleşen danışan bulunamadı.'
+              : 'Henüz danışan eklenmemiş.'}
+          </p>
+          {!searchDebounced && (
+            <button className="add-button" onClick={() => setIsModalOpen(true)}>
+              İlk Danışanı Ekle
+            </button>
+          )}
         </div>
       ) : (
         <div className="table-container">
