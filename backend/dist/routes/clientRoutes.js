@@ -1,16 +1,27 @@
 import express from 'express';
-import { createClientHandler, getClientsHandler, deleteClientHandler, updateClientHandler, createNoteHandler, getClientNotesHandler, } from '../controllers/clientController.js';
+import { createClientHandler, getClientsHandler, deleteClientHandler, updateClientHandler, createNoteHandler, getClientNotesHandler, createAppointmentHandler, getAppointmentsHandler, getAppointmentNotesHandler, getAllAppointmentsHandler, } from '../controllers/clientController.js';
 const router = express.Router();
 // Clients
 router.get('/clients', getClientsHandler);
 router.post('/clients', createClientHandler);
 router.put('/clients/:id', updateClientHandler);
 router.delete('/clients/:id', deleteClientHandler);
-// Notes for a client
+// Notes for a client (all notes)
 router.get('/clients/:clientId/notes', getClientNotesHandler);
 router.post('/clients/:clientId/notes', (req, res, next) => {
-    // ensure clientId from params is on body for CreateNoteInput
     req.body.clientId = Number(req.params.clientId);
+    return createNoteHandler(req, res);
+});
+// All appointments (for calendar)
+router.get('/appointments', getAllAppointmentsHandler);
+// Appointments for a client
+router.get('/clients/:clientId/appointments', getAppointmentsHandler);
+router.post('/clients/:clientId/appointments', createAppointmentHandler);
+// Notes for an appointment
+router.get('/clients/:clientId/appointments/:appointmentId/notes', getAppointmentNotesHandler);
+router.post('/clients/:clientId/appointments/:appointmentId/notes', (req, res, next) => {
+    req.body.clientId = Number(req.params.clientId);
+    req.body.appointmentId = Number(req.params.appointmentId);
     return createNoteHandler(req, res);
 });
 export default router;

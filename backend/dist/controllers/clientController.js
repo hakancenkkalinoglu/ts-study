@@ -1,4 +1,4 @@
-import { createClient, deleteClientById, getAllClients, updateClient, createNote, getNotesByClientId, } from '../services/clientService.js';
+import { createClient, deleteClientById, getAllClients, updateClient, createNote, getNotesByClientId, getNotesByAppointmentId, createAppointment, getAppointmentsByClientId, getAllAppointments, } from '../services/clientService.js';
 export const createClientHandler = async (req, res) => {
     try {
         const body = req.body;
@@ -10,9 +10,10 @@ export const createClientHandler = async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 };
-export const getClientsHandler = (_req, res) => {
+export const getClientsHandler = (req, res) => {
     try {
-        const clients = getAllClients();
+        const search = req.query.search;
+        const clients = getAllClients(search);
         res.json(clients);
     }
     catch (err) {
@@ -74,6 +75,50 @@ export const getClientNotesHandler = (req, res) => {
     }
     catch (err) {
         console.error('Error getting notes:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const createAppointmentHandler = (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const body = req.body;
+        const id = createAppointment({ ...body, clientId });
+        res.status(201).json({ id });
+    }
+    catch (err) {
+        console.error('Error creating appointment:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const getAppointmentsHandler = (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const appointments = getAppointmentsByClientId(clientId);
+        res.json(appointments);
+    }
+    catch (err) {
+        console.error('Error getting appointments:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const getAppointmentNotesHandler = (req, res) => {
+    try {
+        const appointmentId = Number(req.params.appointmentId);
+        const notes = getNotesByAppointmentId(appointmentId);
+        res.json(notes);
+    }
+    catch (err) {
+        console.error('Error getting appointment notes:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+export const getAllAppointmentsHandler = (_req, res) => {
+    try {
+        const appointments = getAllAppointments();
+        res.json(appointments);
+    }
+    catch (err) {
+        console.error('Error getting all appointments:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

@@ -1,6 +1,7 @@
 import db from '../database/db.js';
 import type { CreateClientInput, UpdateClientInput } from '../models/Client.js';
 import type { CreateNoteInput, Note } from '../models/Note.js';
+import type { Appointment, CreateAppointmentInput } from '../models/Appointment.js';
 import * as bcrypt from 'bcrypt';
 
 export const hashPassword = async (password: string) => {
@@ -97,20 +98,57 @@ export const deleteClientById = async (id: string) => {
   return result.changes;
 };
 
-export const getAllClients = () => {
-  const stmt = db.prepare(`SELECT * FROM clients`);
-  const clients = stmt.all();
-  return clients;
+export const getAllClients = (search?: string) => {
+  if (search && search.trim()) {
+    const searchPattern = `%${search.trim()}%`;
+    const stmt = db.prepare(`
+      SELECT * FROM clients
+      WHERE name LIKE ? OR email LIKE ?
+      ORDER BY name ASC
+    `);
+    return stmt.all(searchPattern, searchPattern);
+  }
+  const stmt = db.prepare(`SELECT * FROM clients ORDER BY name ASC`);
+  return stmt.all();
 }
+
+export const createAppointment = (input: CreateAppointmentInput) => {
+  const stmt = db.prepare(`
+    INSERT INTO appointments (clientId, appointmentDate, title, createdAt, updatedAt)
+    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+  `);
+  const result = stmt.run(input.clientId, input.appointmentDate, input.title ?? null);
+  return result.lastInsertRowid as number;
+};
+
+export const getAppointmentsByClientId = (clientId: number): Appointment[] => {
+  const stmt = db.prepare(`
+    SELECT * FROM appointments WHERE clientId = ? ORDER BY appointmentDate DESC
+  `);
+  return stmt.all(clientId) as Appointment[];
+};
+
+export type AppointmentWithClient = Appointment & { clientName: string | null };
+
+export const getAllAppointments = (): AppointmentWithClient[] => {
+  const stmt = db.prepare(`
+    SELECT a.*, c.name as clientName
+    FROM appointments a
+    LEFT JOIN clients c ON a.clientId = c.id
+    ORDER BY a.appointmentDate ASC
+  `);
+  return stmt.all() as AppointmentWithClient[];
+};
 
 export const createNote = (note: CreateNoteInput) => {
   const stmt = db.prepare(`
-    INSERT INTO client_notes (clientId, title, content, noteDate, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+    INSERT INTO client_notes (clientId, appointmentId, title, content, noteDate, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `);
 
   const result = stmt.run(
     note.clientId,
+    note.appointmentId ?? null,
     note.title ?? null,
     note.content,
     note.noteDate
@@ -123,4 +161,11 @@ export const getNotesByClientId = (clientId: number): Note[] => {
   const stmt = db.prepare(`SELECT * FROM client_notes WHERE clientId = ? ORDER BY noteDate DESC, createdAt DESC`);
   const rows = stmt.all(clientId) as Note[];
   return rows;
+};
+
+export const getNotesByAppointmentId = (appointmentId: number): Note[] => {
+  const stmt = db.prepare(`
+    SELECT * FROM client_notes WHERE appointmentId = ? ORDER BY noteDate DESC, createdAt DESC
+  `);
+  return stmt.all(appointmentId) as Note[];
 };

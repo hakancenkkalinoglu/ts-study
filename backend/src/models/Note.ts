@@ -1,6 +1,7 @@
 export type Note = {
   id: number;
   clientId: number;
+  appointmentId: number | null;
   title: string | null;
   content: string;
   filePath: string | null;
@@ -11,6 +12,7 @@ export type Note = {
 
 export type CreateNoteInput = {
   clientId: number;
+  appointmentId?: number | null;
   title?: string;
   content: string;
   noteDate: string;

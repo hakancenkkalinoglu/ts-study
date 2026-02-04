@@ -23,29 +23,45 @@ function initializeDatabase() {
       updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+    // Create appointments table
+    db.exec(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clientId INTEGER NOT NULL,
+      appointmentDate TEXT NOT NULL,
+      title TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (clientId) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
     // Create client_notes table
     db.exec(`
     CREATE TABLE IF NOT EXISTS client_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       clientId INTEGER NOT NULL,
+      appointmentId INTEGER,
       title TEXT,
       content TEXT NOT NULL,
       filePath TEXT,
       noteDate TEXT NOT NULL,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (clientId) REFERENCES clients(id) ON DELETE CASCADE
+      FOREIGN KEY (clientId) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (appointmentId) REFERENCES appointments(id) ON DELETE CASCADE
     )
   `);
     // Migration: Add filePath column to existing client_notes table if it doesn't exist
-    try {
-        db.exec(`
-      ALTER TABLE client_notes 
-      ADD COLUMN filePath TEXT
-    `);
+    let tableInfo = db.prepare("PRAGMA table_info(client_notes)").all();
+    let hasFilePath = tableInfo.some((col) => col.name === 'filePath');
+    if (!hasFilePath) {
+        db.exec(`ALTER TABLE client_notes ADD COLUMN filePath TEXT`);
     }
-    catch (error) {
-        console.error('Migration error:', error);
+    // Migration: Add appointmentId column to existing client_notes table if it doesn't exist
+    tableInfo = db.prepare("PRAGMA table_info(client_notes)").all();
+    const hasAppointmentId = tableInfo.some((col) => col.name === 'appointmentId');
+    if (!hasAppointmentId) {
+        db.exec(`ALTER TABLE client_notes ADD COLUMN appointmentId INTEGER`);
     }
 }
 // Initialize the database
