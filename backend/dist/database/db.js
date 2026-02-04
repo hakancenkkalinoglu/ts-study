@@ -30,12 +30,23 @@ function initializeDatabase() {
       clientId INTEGER NOT NULL,
       title TEXT,
       content TEXT NOT NULL,
+      filePath TEXT,
       noteDate TEXT NOT NULL,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (clientId) REFERENCES clients(id) ON DELETE CASCADE
     )
   `);
+    // Migration: Add filePath column to existing client_notes table if it doesn't exist
+    try {
+        db.exec(`
+      ALTER TABLE client_notes 
+      ADD COLUMN filePath TEXT
+    `);
+    }
+    catch (error) {
+        console.error('Migration error:', error);
+    }
 }
 // Initialize the database
 initializeDatabase();

@@ -69,7 +69,6 @@ export const getAllClients = () => {
     const clients = stmt.all();
     return clients;
 };
-// ---- User notes ----
 export const createNote = (note) => {
     const stmt = db.prepare(`
     INSERT INTO client_notes (clientId, title, content, noteDate, createdAt, updatedAt)

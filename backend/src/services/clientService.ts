@@ -103,8 +103,6 @@ export const getAllClients = () => {
   return clients;
 }
 
-// ---- User notes ----
-
 export const createNote = (note: CreateNoteInput) => {
   const stmt = db.prepare(`
     INSERT INTO client_notes (clientId, title, content, noteDate, createdAt, updatedAt)

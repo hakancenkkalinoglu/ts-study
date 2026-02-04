@@ -3,7 +3,8 @@ export type Note = {
   clientId: number;
   title: string | null;
   content: string;
-  noteDate: string; // date of the note (e.g. '2025-01-01')
+  filePath: string | null;
+  noteDate: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -13,6 +14,7 @@ export type CreateNoteInput = {
   title?: string;
   content: string;
   noteDate: string;
+  filePath?: string | null;
 };
 
 export type UpdateNoteInput = {
