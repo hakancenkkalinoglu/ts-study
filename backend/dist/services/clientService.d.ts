@@ -13,11 +13,17 @@ export declare const createAppointment: (input: CreateAppointmentInput) => numbe
 export declare const getAppointmentsByClientId: (clientId: number) => Appointment[];
 export declare const updateAppointment: (appointmentId: number, clientId: number, data: UpdateAppointmentInput) => number;
 export declare const deleteAppointmentById: (appointmentId: number, clientId: number) => number;
+export declare const updateAppointmentGoogleFields: (appointmentId: number, data: {
+    googleEventId: string;
+    googleMeetLink: string;
+    googleHtmlLink: string;
+}) => number;
 export type AppointmentWithClient = Appointment & {
     clientName: string | null;
     agreedFee: number | null;
 };
 export declare const getAllAppointments: () => AppointmentWithClient[];
+export declare const getAppointmentByIdWithClient: (appointmentId: number) => AppointmentWithClient | null;
 export declare const createNote: (note: CreateNoteInput) => number | bigint;
 export declare const getNotesByClientId: (clientId: number) => Note[];
 export declare const getNotesByAppointmentId: (appointmentId: number) => Note[];

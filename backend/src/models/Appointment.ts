@@ -5,6 +5,9 @@ export type Appointment = {
   appointmentTime: string | null;
   title: string | null;
   isPaid: number;
+  googleEventId?: string | null;
+  googleMeetLink?: string | null;
+  googleHtmlLink?: string | null;
   createdAt: string;
   updatedAt: string;
 };

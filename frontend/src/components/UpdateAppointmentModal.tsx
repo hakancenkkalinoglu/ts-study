@@ -1,5 +1,11 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { updateAppointment, deleteAppointment } from '../services/api';
+import {
+  updateAppointment,
+  deleteAppointment,
+  getGoogleAuthUrl,
+  getGoogleAuthStatus,
+  createMeetForAppointment,
+} from '../services/api';
 import type { AppointmentWithClient } from '../types';
 import './AddClientModal.css';
 
@@ -37,12 +43,36 @@ export const UpdateAppointmentModal = ({
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [creatingMeet, setCreatingMeet] = useState(false);
+  const [meetLink, setMeetLink] = useState<string | null>(null);
+  const [meetError, setMeetError] = useState<string | null>(null);
+
+  const displayMeetLink = appointment?.googleMeetLink ?? meetLink;
 
   useEffect(() => {
     if (appointment) {
       setFormData(getInitialFormData(appointment));
+      if (!appointment.googleMeetLink) setMeetLink(null);
+      setMeetError(null);
     }
   }, [appointment]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    getGoogleAuthStatus()
+      .then(({ connected }) => setGoogleConnected(connected))
+      .catch(() => setGoogleConnected(false));
+  }, [isOpen]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const google = params.get('google');
+    if (google === 'success') {
+      setGoogleConnected(true);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   if (!isOpen || !appointment) return null;
 
@@ -84,6 +114,23 @@ export const UpdateAppointmentModal = ({
       console.error(err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCreateMeet = async () => {
+    setMeetError(null);
+    setCreatingMeet(true);
+    try {
+      const result = await createMeetForAppointment(appointment.id, 60);
+      setMeetLink(result.meetLink);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : null;
+      setMeetError(msg || 'Google Meet oluşturulurken bir hata oluştu.');
+    } finally {
+      setCreatingMeet(false);
     }
   };
 
@@ -152,6 +199,54 @@ export const UpdateAppointmentModal = ({
               <span className="toggle-slider" />
             </label>
           </div>
+
+          <div className="form-group google-meet-section">
+            <label>Google Meet</label>
+            {!googleConnected ? (
+              <a
+                href={getGoogleAuthUrl()}
+                className="btn-google-connect"
+                rel="noopener noreferrer"
+              >
+                Google Calendar ile bağlan
+              </a>
+            ) : (
+              <>
+                {!displayMeetLink ? (
+                  <button
+                    type="button"
+                    className="btn-create-meet"
+                    onClick={handleCreateMeet}
+                    disabled={creatingMeet}
+                  >
+                    {creatingMeet ? 'Oluşturuluyor...' : 'Google Meet oluştur'}
+                  </button>
+                ) : (
+                  <div className="meet-links-display">
+                    <div className="meet-link-box">
+                      <a href={displayMeetLink} target="_blank" rel="noopener noreferrer" className="meet-link">
+                        Meet linki – yeni sekmede aç
+                      </a>
+                      <button
+                        type="button"
+                        className="btn-copy-meet"
+                        onClick={() => navigator.clipboard.writeText(displayMeetLink)}
+                      >
+                        Kopyala
+                      </button>
+                    </div>
+                    {appointment.googleHtmlLink && (
+                      <a href={appointment.googleHtmlLink} target="_blank" rel="noopener noreferrer" className="calendar-link">
+                        Takvimde aç
+                      </a>
+                    )}
+                  </div>
+                )}
+                {meetError && <div className="error-message">{meetError}</div>}
+              </>
+            )}
+          </div>
+
           {error && <div className="error-message">{error}</div>}
           <div className="modal-actions modal-actions-with-delete">
             <button

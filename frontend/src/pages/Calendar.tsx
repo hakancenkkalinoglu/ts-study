@@ -130,6 +130,18 @@ export const Calendar = () => {
                 <div className="apt-time">{formatTime(apt.appointmentTime)}</div>
                 <div className="apt-title">{apt.title || 'Randevu'}</div>
                 <div className="apt-client">{apt.clientName || 'Danışan'}</div>
+                {apt.googleMeetLink && (
+                  <a
+                    href={apt.googleMeetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="apt-meet-link"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Meet linki"
+                  >
+                    Meet
+                  </a>
+                )}
               </div>
             ))
           )}
@@ -298,7 +310,13 @@ export const Calendar = () => {
       <AddAppointmentModal
         isOpen={addModalOpen}
         onClose={() => setAddModalOpen(false)}
-        onSuccess={loadAppointments}
+        onSuccess={(createdAppointment) => {
+          loadAppointments();
+          if (createdAppointment) {
+            setAddModalOpen(false);
+            setUpdateModalAppointment(createdAppointment);
+          }
+        }}
         initialDate={addModalDate}
       />
       <UpdateAppointmentModal

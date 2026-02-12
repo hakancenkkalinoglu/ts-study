@@ -94,6 +94,33 @@ function initializeDatabase() {
   if (!hasAgreedFee) {
     db.exec(`ALTER TABLE clients ADD COLUMN agreedFee INTEGER DEFAULT 2000`);
   }
+
+  // Migration: Google Calendar / Meet link columns on appointments
+  tableInfo = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+  const hasGoogleEventId = tableInfo.some((col) => col.name === 'googleEventId');
+  if (!hasGoogleEventId) {
+    db.exec(`ALTER TABLE appointments ADD COLUMN googleEventId TEXT`);
+  }
+  tableInfo = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+  const hasGoogleMeetLink = tableInfo.some((col) => col.name === 'googleMeetLink');
+  if (!hasGoogleMeetLink) {
+    db.exec(`ALTER TABLE appointments ADD COLUMN googleMeetLink TEXT`);
+  }
+  tableInfo = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+  const hasGoogleHtmlLink = tableInfo.some((col) => col.name === 'googleHtmlLink');
+  if (!hasGoogleHtmlLink) {
+    db.exec(`ALTER TABLE appointments ADD COLUMN googleHtmlLink TEXT`);
+  }
+
+  // App login users table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      passwordHash TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 }
 
 // Initialize the database

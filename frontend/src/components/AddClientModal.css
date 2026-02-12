@@ -260,6 +260,90 @@
   cursor: not-allowed;
 }
 
+/* Google Meet section */
+.google-meet-section {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 8px;
+}
+
+.google-meet-section label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.btn-google-connect,
+.btn-create-meet {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background 0.2s, color 0.2s;
+}
+
+.btn-google-connect:hover,
+.btn-create-meet:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn-create-meet:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.meet-link-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.meet-link {
+  color: var(--link-color, #1a73e8);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.meet-link:hover {
+  text-decoration: underline;
+}
+
+.calendar-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.calendar-link:hover {
+  color: var(--link-color, #1a73e8);
+  text-decoration: underline;
+}
+
+.meet-links-display .calendar-link {
+  margin-top: 6px;
+}
+
+.btn-copy-meet {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.btn-copy-meet:hover {
+  background: var(--bg-hover);
+}
+
 /* Responsive - zoom / küçük ekran */
 @media (max-width: 600px) {
   .modal-overlay {

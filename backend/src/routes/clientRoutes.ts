@@ -10,8 +10,10 @@ import {
   getAppointmentsHandler,
   getAppointmentNotesHandler,
   getAllAppointmentsHandler,
+  getAppointmentByIdHandler,
   updateAppointmentHandler,
   deleteAppointmentHandler,
+  createMeetHandler,
 } from '../controllers/clientController.js';
 
 const router = express.Router();
@@ -31,6 +33,10 @@ router.post('/clients/:clientId/notes', (req, res, next) => {
 
 // All appointments (for calendar)
 router.get('/appointments', getAllAppointmentsHandler);
+// Single appointment (for opening update modal after create)
+router.get('/appointments/:id', getAppointmentByIdHandler);
+// Google Meet: create calendar event with Meet for an appointment
+router.post('/appointments/:appointmentId/create-meet', createMeetHandler);
 
 // Appointments for a client
 router.get('/clients/:clientId/appointments', getAppointmentsHandler);

@@ -208,6 +208,19 @@ export const deleteAppointmentById = (appointmentId: number, clientId: number) =
   return result.changes;
 };
 
+export const updateAppointmentGoogleFields = (
+  appointmentId: number,
+  data: { googleEventId: string; googleMeetLink: string; googleHtmlLink: string }
+) => {
+  const stmt = db.prepare(`
+    UPDATE appointments
+    SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = datetime('now')
+    WHERE id = ?
+  `);
+  const result = stmt.run(data.googleEventId, data.googleMeetLink, data.googleHtmlLink, appointmentId);
+  return result.changes;
+};
+
 export type AppointmentWithClient = Appointment & {
   clientName: string | null;
   agreedFee: number | null;
@@ -220,6 +233,17 @@ export const getAllAppointments = (): AppointmentWithClient[] => {
     ORDER BY a.appointmentDate ASC, a.appointmentTime ASC
   `);
   return stmt.all() as AppointmentWithClient[];
+};
+
+export const getAppointmentByIdWithClient = (appointmentId: number): AppointmentWithClient | null => {
+  const stmt = db.prepare(`
+    SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
+    FROM appointments a
+    LEFT JOIN clients c ON a.clientId = c.id
+    WHERE a.id = ?
+  `);
+  const row = stmt.get(appointmentId);
+  return (row as AppointmentWithClient) ?? null;
 };
 
 export const createNote = (note: CreateNoteInput) => {

@@ -1,8 +1,18 @@
 import { NavLink } from 'react-router-dom';
 import { ThemeToggle } from './ThemeToggle';
+import { clearStoredToken } from '../services/api';
 import './MainNav.css';
 
-export const MainNav = () => {
+interface MainNavProps {
+  onLogout: () => void;
+}
+
+export const MainNav = ({ onLogout }: MainNavProps) => {
+  const handleLogout = () => {
+    clearStoredToken();
+    onLogout();
+  };
+
   return (
     <nav className="main-nav">
       <div className="main-nav-tabs">
@@ -34,6 +44,9 @@ export const MainNav = () => {
       </div>
       <div className="main-nav-actions">
         <ThemeToggle />
+        <button type="button" className="nav-logout-btn" onClick={handleLogout}>
+          Çıkış
+        </button>
       </div>
     </nav>
   );

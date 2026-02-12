@@ -147,6 +147,15 @@ export const deleteAppointmentById = (appointmentId, clientId) => {
     const result = stmt.run(appointmentId, clientId);
     return result.changes;
 };
+export const updateAppointmentGoogleFields = (appointmentId, data) => {
+    const stmt = db.prepare(`
+    UPDATE appointments
+    SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = datetime('now')
+    WHERE id = ?
+  `);
+    const result = stmt.run(data.googleEventId, data.googleMeetLink, data.googleHtmlLink, appointmentId);
+    return result.changes;
+};
 export const getAllAppointments = () => {
     const stmt = db.prepare(`
     SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
@@ -155,6 +164,16 @@ export const getAllAppointments = () => {
     ORDER BY a.appointmentDate ASC, a.appointmentTime ASC
   `);
     return stmt.all();
+};
+export const getAppointmentByIdWithClient = (appointmentId) => {
+    const stmt = db.prepare(`
+    SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
+    FROM appointments a
+    LEFT JOIN clients c ON a.clientId = c.id
+    WHERE a.id = ?
+  `);
+    const row = stmt.get(appointmentId);
+    return row ?? null;
 };
 export const createNote = (note) => {
     const stmt = db.prepare(`

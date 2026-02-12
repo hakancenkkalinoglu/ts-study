@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
-import { createAppointment, getClients } from '../services/api';
-import type { Client } from '../types';
+import { createAppointment, getAppointmentById, getClients } from '../services/api';
+import type { Client, AppointmentWithClient } from '../types';
 import './AddClientModal.css';
 import './AddAppointmentModal.css';
 
 interface AddAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  /** Called after create; if createdAppointment is passed, parent should open update modal with it. */
+  onSuccess: (createdAppointment?: AppointmentWithClient | null) => void;
   initialDate?: string;
 }
 
@@ -118,13 +119,13 @@ export const AddAppointmentModal = ({
     setLoading(true);
 
     try {
-      await createAppointment({
+      const result = await createAppointment({
         clientId: formData.clientId,
         appointmentDate: formData.appointmentDate,
         appointmentTime: formData.appointmentTime,
         title: formData.title || undefined,
       });
-      onSuccess();
+      const createdAppointment = await getAppointmentById(result.id);
       setFormData({
         clientId: 0,
         selectedClientName: '',
@@ -133,7 +134,7 @@ export const AddAppointmentModal = ({
         title: '',
       });
       setSearchTerm('');
-      onClose();
+      onSuccess(createdAppointment);
     } catch (err) {
       setError('Randevu eklenirken bir hata oluştu.');
       console.error(err);

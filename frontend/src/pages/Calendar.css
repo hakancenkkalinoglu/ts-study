@@ -342,6 +342,18 @@
   opacity: 0.95;
 }
 
+.apt-meet-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: underline;
+}
+
+.apt-meet-link:hover {
+  color: white;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .calendar-container {
