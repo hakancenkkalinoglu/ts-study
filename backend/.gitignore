@@ -1,4 +1,5 @@
-node_modules
+target/
+.mvn/wrapper/maven-wrapper.jar
 # Keep environment variables out of version control
 .env
 # Google OAuth tokens (user-specific)
