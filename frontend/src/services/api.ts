@@ -3,7 +3,7 @@ import type { Client, CreateClientInput, Note, CreateNoteInput, Appointment, Cre
 
 // Relative URL: Vite proxy forwards /api to backend (localhost:3000)
 const API_BASE_URL = '/api';
-const TOKEN_KEY = 'leylilog_token';
+const TOKEN_KEY = 'testpsikolog_token';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

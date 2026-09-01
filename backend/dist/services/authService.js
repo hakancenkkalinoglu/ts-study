@@ -1,7 +1,7 @@
 import db from '../database/db.js';
 import * as bcrypt from 'bcrypt';
-const DEFAULT_USERNAME = 'psgleylidereli';
-const DEFAULT_PASSWORD = 'leyli1123';
+const DEFAULT_USERNAME = 'testpsikolog';
+const DEFAULT_PASSWORD = 'test1234';
 export function findUserByUsername(username) {
     const row = db.prepare('SELECT * FROM app_users WHERE username = ?').get(username);
     return row ?? null;

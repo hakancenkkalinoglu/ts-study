@@ -115,7 +115,7 @@ export async function createCalendarEventWithMeet(
     end: { dateTime: end, timeZone: TIMEZONE },
     conferenceData: {
       createRequest: {
-        requestId: `leylilog-${appointment.id}-${Date.now()}`,
+        requestId: `testpsikolog-${appointment.id}-${Date.now()}`,
         conferenceSolutionKey: { type: 'hangoutsMeet' },
       },
     },

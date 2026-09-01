@@ -5,7 +5,7 @@ import { findUserByUsername, verifyPassword } from '../services/authService.js';
 
 const router = express.Router();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const JWT_SECRET = process.env.JWT_SECRET || 'leylilog-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'testpsikolog-secret-change-in-production';
 
 router.post('/auth/login', async (req, res) => {
   try {

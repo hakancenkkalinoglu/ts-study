@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-const JWT_SECRET = process.env.JWT_SECRET || 'leylilog-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'testpsikolog-secret-change-in-production';
 function isPublicPath(req) {
     const p = req.path;
     if (req.method === 'POST' && (p === '/auth/login' || p === '/auth/login/'))

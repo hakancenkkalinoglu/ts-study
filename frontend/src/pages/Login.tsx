@@ -34,7 +34,7 @@ export const Login = ({ onSuccess }: LoginProps) => {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1 className="login-title">Leylilog</h1>
+        <h1 className="login-title">TestPsikolog</h1>
         <p className="login-subtitle">Devam etmek için giriş yapın</p>
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">

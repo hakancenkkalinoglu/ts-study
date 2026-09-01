@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'leylilog-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'testpsikolog-secret-change-in-production';
 
 export type JwtPayload = { username: string };
 
