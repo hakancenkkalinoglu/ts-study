@@ -26,19 +26,23 @@ public class AppointmentService {
             rs.getString("createdAt"),
             rs.getString("updatedAt"),
             columnExists(rs, "clientName") ? rs.getString("clientName") : null,
-            columnExists(rs, "agreedFee") && rs.getObject("agreedFee") != null ? rs.getInt("agreedFee") : null
+            columnExists(rs, "agreedFee") && rs.getObject("agreedFee") != null ? rs.getInt("agreedFee") : null,
+            columnExists(rs, "clientEmail") ? rs.getString("clientEmail") : null
     );
 
     private final JdbcTemplate jdbc;
+    private final ClientService clientService;
 
-    public AppointmentService(JdbcTemplate jdbc) {
+    public AppointmentService(JdbcTemplate jdbc, ClientService clientService) {
         this.jdbc = jdbc;
+        this.clientService = clientService;
     }
 
-    public long create(long clientId, CreateAppointmentRequest input) {
+    public long create(long userId, long clientId, CreateAppointmentRequest input) {
+        clientService.requireOwned(userId, clientId);
         String dateStr = normalizeDate(input.appointmentDate());
         String timeStr = normalizeTime(input.appointmentTime());
-        if (hasAppointmentAtDateTime(dateStr, timeStr, null)) {
+        if (hasAppointmentAtDateTime(userId, dateStr, timeStr, null)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu tarih ve saatte zaten bir randevu mevcut.");
         }
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
@@ -57,46 +61,62 @@ public class AppointmentService {
         return id == null ? 0L : id;
     }
 
-    public List<AppointmentResponse> getByClientId(long clientId) {
+    public List<AppointmentResponse> getByClientId(long userId, long clientId) {
+        clientService.requireOwned(userId, clientId);
         return jdbc.query(
-                "SELECT * FROM appointments WHERE clientId = ? ORDER BY appointmentDate DESC, appointmentTime ASC",
+                """
+                SELECT a.*, c.name as clientName, c.agreedFee as agreedFee, c.email as clientEmail
+                FROM appointments a
+                INNER JOIN clients c ON a.clientId = c.id
+                WHERE a.clientId = ?
+                ORDER BY a.appointmentDate DESC, a.appointmentTime ASC
+                """,
                 APPOINTMENT_MAPPER,
                 clientId
         );
     }
 
-    public List<AppointmentResponse> getAll() {
+    public List<AppointmentResponse> getAll(long userId) {
         return jdbc.query(
                 """
-                SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
+                SELECT a.*, c.name as clientName, c.agreedFee as agreedFee, c.email as clientEmail
                 FROM appointments a
-                LEFT JOIN clients c ON a.clientId = c.id
+                INNER JOIN clients c ON a.clientId = c.id
+                WHERE c.userId = ?
                 ORDER BY a.appointmentDate ASC, a.appointmentTime ASC
                 """,
-                APPOINTMENT_MAPPER
+                APPOINTMENT_MAPPER,
+                userId
         );
     }
 
-    public AppointmentResponse getByIdWithClient(long appointmentId) {
+    public AppointmentResponse getByIdWithClient(long userId, long appointmentId) {
         List<AppointmentResponse> rows = jdbc.query(
                 """
-                SELECT a.*, c.name as clientName, c.agreedFee as agreedFee
+                SELECT a.*, c.name as clientName, c.agreedFee as agreedFee, c.email as clientEmail
                 FROM appointments a
-                LEFT JOIN clients c ON a.clientId = c.id
-                WHERE a.id = ?
+                INNER JOIN clients c ON a.clientId = c.id
+                WHERE a.id = ? AND c.userId = ?
                 """,
                 APPOINTMENT_MAPPER,
-                appointmentId
+                appointmentId,
+                userId
         );
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    public int update(long appointmentId, long clientId, UpdateAppointmentRequest data) {
+    public int update(long userId, long appointmentId, long clientId, UpdateAppointmentRequest data) {
+        clientService.requireOwned(userId, clientId);
         List<AppointmentResponse> currentRows = jdbc.query(
-                "SELECT * FROM appointments WHERE id = ? AND clientId = ?",
+                """
+                SELECT a.* FROM appointments a
+                INNER JOIN clients c ON a.clientId = c.id
+                WHERE a.id = ? AND a.clientId = ? AND c.userId = ?
+                """,
                 APPOINTMENT_MAPPER,
                 appointmentId,
-                clientId
+                clientId,
+                userId
         );
         if (currentRows.isEmpty()) {
             return 0;
@@ -108,7 +128,7 @@ public class AppointmentService {
         String newTime = data.appointmentTime() != null
                 ? normalizeTime(data.appointmentTime())
                 : normalizeTime(current.appointmentTime());
-        if (hasAppointmentAtDateTime(newDate, newTime, appointmentId)) {
+        if (hasAppointmentAtDateTime(userId, newDate, newTime, appointmentId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu tarih ve saatte zaten bir randevu mevcut.");
         }
         Integer isPaidVal = data.isPaid() == null ? null : (Boolean.TRUE.equals(data.isPaid()) ? 1 : 0);
@@ -133,11 +153,25 @@ public class AppointmentService {
         );
     }
 
-    public int delete(long appointmentId, long clientId) {
-        return jdbc.update("DELETE FROM appointments WHERE id = ? AND clientId = ?", appointmentId, clientId);
+    public int delete(long userId, long appointmentId, long clientId) {
+        clientService.requireOwned(userId, clientId);
+        return jdbc.update(
+                """
+                DELETE FROM appointments
+                WHERE id = ? AND clientId = ?
+                  AND clientId IN (SELECT id FROM clients WHERE userId = ?)
+                """,
+                appointmentId,
+                clientId,
+                userId
+        );
     }
 
-    public int updateGoogleFields(long appointmentId, String eventId, String meetLink, String htmlLink) {
+    public int updateGoogleFields(long userId, long appointmentId, String eventId, String meetLink, String htmlLink) {
+        AppointmentResponse owned = getByIdWithClient(userId, appointmentId);
+        if (owned == null) {
+            return 0;
+        }
         return jdbc.update(
                 """
                 UPDATE appointments
@@ -151,22 +185,32 @@ public class AppointmentService {
         );
     }
 
-    private boolean hasAppointmentAtDateTime(String appointmentDate, String appointmentTime, Long excludeId) {
+    private boolean hasAppointmentAtDateTime(long userId, String appointmentDate, String appointmentTime, Long excludeId) {
         String datePattern = appointmentDate + "%";
         String timePattern = appointmentTime + "%";
         Integer existing;
         if (excludeId != null) {
             existing = jdbc.query(
-                    "SELECT id FROM appointments WHERE appointmentDate LIKE ? AND appointmentTime LIKE ? AND id != ?",
+                    """
+                    SELECT a.id FROM appointments a
+                    INNER JOIN clients c ON a.clientId = c.id
+                    WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ? AND a.id != ?
+                    """,
                     rs -> rs.next() ? rs.getInt("id") : null,
+                    userId,
                     datePattern,
                     timePattern,
                     excludeId
             );
         } else {
             existing = jdbc.query(
-                    "SELECT id FROM appointments WHERE appointmentDate LIKE ? AND appointmentTime LIKE ?",
+                    """
+                    SELECT a.id FROM appointments a
+                    INNER JOIN clients c ON a.clientId = c.id
+                    WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ?
+                    """,
                     rs -> rs.next() ? rs.getInt("id") : null,
+                    userId,
                     datePattern,
                     timePattern
             );

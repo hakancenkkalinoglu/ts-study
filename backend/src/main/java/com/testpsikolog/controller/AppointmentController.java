@@ -12,6 +12,8 @@ import com.testpsikolog.dto.NoteResponse;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
 import com.testpsikolog.dto.UpdatedResponse;
 import com.testpsikolog.service.AppointmentService;
+import com.testpsikolog.service.AuthService;
+import com.testpsikolog.service.CurrentUserService;
 import com.testpsikolog.service.GoogleCalendarService;
 import com.testpsikolog.service.NoteService;
 import java.util.List;
@@ -34,25 +36,33 @@ public class AppointmentController {
     private final AppointmentService appointmentService;
     private final NoteService noteService;
     private final GoogleCalendarService googleCalendarService;
+    private final CurrentUserService currentUserService;
+    private final AuthService authService;
 
     public AppointmentController(
             AppointmentService appointmentService,
             NoteService noteService,
-            GoogleCalendarService googleCalendarService
+            GoogleCalendarService googleCalendarService,
+            CurrentUserService currentUserService,
+            AuthService authService
     ) {
         this.appointmentService = appointmentService;
         this.noteService = noteService;
         this.googleCalendarService = googleCalendarService;
+        this.currentUserService = currentUserService;
+        this.authService = authService;
     }
 
     @GetMapping("/appointments")
     public List<AppointmentResponse> getAllAppointments() {
-        return appointmentService.getAll();
+        long userId = currentUserService.requireUser().id();
+        return appointmentService.getAll(userId);
     }
 
     @GetMapping("/appointments/{id}")
     public AppointmentResponse getAppointment(@PathVariable long id) {
-        AppointmentResponse appointment = appointmentService.getByIdWithClient(id);
+        long userId = currentUserService.requireUser().id();
+        AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, id);
         if (appointment == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Randevu bulunamadı.");
         }
@@ -64,19 +74,22 @@ public class AppointmentController {
             @PathVariable long appointmentId,
             @RequestBody(required = false) CreateMeetRequest body
     ) {
-        AppointmentResponse appointment = appointmentService.getByIdWithClient(appointmentId);
+        long userId = currentUserService.requireUser().id();
+        AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, appointmentId);
         if (appointment == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Randevu bulunamadı.");
         }
         int duration = body != null && body.durationMinutes() != null ? body.durationMinutes() : 60;
-        MeetResponse result = googleCalendarService.createCalendarEventWithMeet(appointment, duration);
-        appointmentService.updateGoogleFields(appointmentId, result.eventId(), result.meetLink(), result.htmlLink());
+        String psychologistEmail = authService.requireEmail(userId);
+        MeetResponse result = googleCalendarService.createCalendarEventWithMeet(userId, appointment, duration, psychologistEmail);
+        appointmentService.updateGoogleFields(userId, appointmentId, result.eventId(), result.meetLink(), result.htmlLink());
         return result;
     }
 
     @GetMapping("/clients/{clientId}/appointments")
     public List<AppointmentResponse> getClientAppointments(@PathVariable long clientId) {
-        return appointmentService.getByClientId(clientId);
+        long userId = currentUserService.requireUser().id();
+        return appointmentService.getByClientId(userId, clientId);
     }
 
     @PostMapping("/clients/{clientId}/appointments")
@@ -85,15 +98,21 @@ public class AppointmentController {
             @PathVariable long clientId,
             @RequestBody CreateAppointmentRequest body
     ) {
-        long id = appointmentService.create(clientId, body);
+        long userId = currentUserService.requireUser().id();
+        long id = appointmentService.create(userId, clientId, body);
         String googleMeetLink = null;
         String googleHtmlLink = null;
-        if (googleCalendarService.isConnected()) {
+        if (googleCalendarService.isConnected(userId)) {
             try {
-                AppointmentResponse appointment = appointmentService.getByIdWithClient(id);
+                AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, id);
                 if (appointment != null) {
-                    MeetResponse result = googleCalendarService.createCalendarEventWithMeet(appointment, 60);
-                    appointmentService.updateGoogleFields(id, result.eventId(), result.meetLink(), result.htmlLink());
+                    MeetResponse result = googleCalendarService.createCalendarEventWithMeet(
+                            userId,
+                            appointment,
+                            60,
+                            authService.requireEmail(userId)
+                    );
+                    appointmentService.updateGoogleFields(userId, id, result.eventId(), result.meetLink(), result.htmlLink());
                     googleMeetLink = result.meetLink();
                     googleHtmlLink = result.htmlLink();
                 }
@@ -110,26 +129,28 @@ public class AppointmentController {
             @PathVariable long appointmentId,
             @RequestBody UpdateAppointmentRequest body
     ) {
-        int updated = appointmentService.update(appointmentId, clientId, body);
+        long userId = currentUserService.requireUser().id();
+        int updated = appointmentService.update(userId, appointmentId, clientId, body);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found");
         }
-        AppointmentResponse appointment = appointmentService.getByIdWithClient(appointmentId);
+        AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, appointmentId);
         if (appointment != null
                 && appointment.googleEventId() != null
                 && (body.appointmentDate() != null || body.appointmentTime() != null || body.title() != null)) {
-            googleCalendarService.updateCalendarEvent(appointment.googleEventId(), appointment, 60);
+            googleCalendarService.updateCalendarEvent(userId, appointment.googleEventId(), appointment, 60);
         }
         return new UpdatedResponse(updated);
     }
 
     @DeleteMapping("/clients/{clientId}/appointments/{appointmentId}")
     public DeletedResponse deleteAppointment(@PathVariable long clientId, @PathVariable long appointmentId) {
-        AppointmentResponse appointment = appointmentService.getByIdWithClient(appointmentId);
+        long userId = currentUserService.requireUser().id();
+        AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, appointmentId);
         if (appointment != null && appointment.googleEventId() != null) {
-            googleCalendarService.deleteCalendarEvent(appointment.googleEventId());
+            googleCalendarService.deleteCalendarEvent(userId, appointment.googleEventId());
         }
-        int deleted = appointmentService.delete(appointmentId, clientId);
+        int deleted = appointmentService.delete(userId, appointmentId, clientId);
         if (deleted == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found");
         }
@@ -137,8 +158,9 @@ public class AppointmentController {
     }
 
     @GetMapping("/clients/{clientId}/appointments/{appointmentId}/notes")
-    public List<NoteResponse> getAppointmentNotes(@PathVariable long appointmentId) {
-        return noteService.getByAppointmentId(appointmentId);
+    public List<NoteResponse> getAppointmentNotes(@PathVariable long clientId, @PathVariable long appointmentId) {
+        long userId = currentUserService.requireUser().id();
+        return noteService.getByAppointmentId(userId, clientId, appointmentId);
     }
 
     @PostMapping("/clients/{clientId}/appointments/{appointmentId}/notes")
@@ -148,6 +170,7 @@ public class AppointmentController {
             @PathVariable long appointmentId,
             @RequestBody CreateNoteRequest body
     ) {
+        long userId = currentUserService.requireUser().id();
         CreateNoteRequest merged = new CreateNoteRequest(
                 clientId,
                 appointmentId,
@@ -155,6 +178,6 @@ public class AppointmentController {
                 body.content(),
                 body.noteDate()
         );
-        return new IdResponse(noteService.create(merged));
+        return new IdResponse(noteService.create(userId, merged));
     }
 }

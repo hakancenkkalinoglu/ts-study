@@ -8,11 +8,26 @@ import { ClientDetail } from './pages/ClientDetail';
 import { Calendar } from './pages/Calendar';
 import { Payments } from './pages/Payments';
 import { Reports } from './pages/Reports';
-import { getStoredToken } from './services/api';
+import { getStoredToken, setStoredToken } from './services/api';
 import './App.css';
 
+function consumeGoogleTokenFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) {
+    return getStoredToken();
+  }
+  setStoredToken(token);
+  params.delete('token');
+  params.delete('google');
+  const query = params.toString();
+  const next = window.location.pathname + (query ? `?${query}` : '') + window.location.hash;
+  window.history.replaceState({}, '', next);
+  return token;
+}
+
 function App() {
-  const [token, setToken] = useState<string | null>(() => getStoredToken());
+  const [token, setToken] = useState<string | null>(() => consumeGoogleTokenFromUrl());
 
   if (!token) {
     return (

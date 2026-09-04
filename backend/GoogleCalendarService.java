@@ -45,13 +45,8 @@ public class GoogleCalendarService {
     private static final List<String> SCOPES = List.of(
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/calendar",
-            "https://www.googleapis.com/auth/calendar.events"
+            "https://www.googleapis.com/auth/calendar"
     );
-    private static final String CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
-    private static final String CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-    private static final String SCOPE_MISSING_MESSAGE =
-            "Google izin ekranında Takvim kutusunu işaretlemeniz gerekir. Kutuyu kapatmayın, sonra tekrar deneyin.";
 
     private final AppProperties appProperties;
     private final JdbcTemplate jdbc;
@@ -86,11 +81,7 @@ public class GoogleCalendarService {
                 if (user == null || user.id() == null) {
                     throw new IllegalStateException("Google oturumu eşleştirilemedi.");
                 }
-                if (hasCalendarScope(transport, tokenResponse)) {
-                    persistTokens(user.id(), tokenResponse);
-                } else {
-                    jdbc.update("DELETE FROM google_tokens WHERE userId = ?", user.id());
-                }
+                persistTokens(user.id(), tokenResponse);
                 return login.token();
             }
             long userId;
@@ -106,10 +97,6 @@ public class GoogleCalendarService {
             );
             if (exists == null) {
                 throw new IllegalStateException("Google oturumu eşleştirilemedi.");
-            }
-            if (!hasCalendarScope(transport, tokenResponse)) {
-                jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
-                throw new IllegalStateException(SCOPE_MISSING_MESSAGE);
             }
             persistTokens(userId, tokenResponse);
             return null;
@@ -178,19 +165,8 @@ public class GoogleCalendarService {
             return new MeetResponse(meetLink, created.getId() == null ? "" : created.getId(), created.getHtmlLink() == null ? "" : created.getHtmlLink());
         } catch (ResponseStatusException ex) {
             throw ex;
-        } catch (com.google.api.client.googleapis.json.GoogleJsonResponseException ex) {
-            if (ex.getStatusCode() == 403) {
-                jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, SCOPE_MISSING_MESSAGE);
-            }
-            throw new IllegalStateException(ex.getMessage() == null ? "Google Calendar event create failed" : ex.getMessage(), ex);
         } catch (Exception ex) {
-            String detail = ex.getMessage() == null ? "" : ex.getMessage();
-            if (detail.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || detail.contains("insufficientPermissions")) {
-                jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, SCOPE_MISSING_MESSAGE);
-            }
-            throw new IllegalStateException(detail.isBlank() ? "Google Calendar event create failed" : detail, ex);
+            throw new IllegalStateException(ex.getMessage() == null ? "Google Calendar event create failed" : ex.getMessage(), ex);
         }
     }
 
@@ -282,7 +258,6 @@ public class GoogleCalendarService {
         )
                 .setAccessType("offline")
                 .set("prompt", "consent")
-                .set("include_granted_scopes", "false")
                 .setState(state)
                 .build();
     }
@@ -313,32 +288,20 @@ public class GoogleCalendarService {
         Long expiry = tokenResponse.getExpiresInSeconds() == null
                 ? null
                 : Instant.now().toEpochMilli() + tokenResponse.getExpiresInSeconds() * 1000;
-        jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
         jdbc.update(
                 """
                 INSERT INTO google_tokens (userId, accessToken, refreshToken, expiryDate)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(userId) DO UPDATE SET
+                  accessToken = excluded.accessToken,
+                  refreshToken = COALESCE(excluded.refreshToken, google_tokens.refreshToken),
+                  expiryDate = excluded.expiryDate
                 """,
                 userId,
                 tokenResponse.getAccessToken(),
                 tokenResponse.getRefreshToken(),
                 expiry
         );
-    }
-
-    private boolean hasCalendarScope(NetHttpTransport transport, GoogleTokenResponse tokenResponse) throws IOException {
-        String granted = tokenResponse.getScope() == null ? "" : tokenResponse.getScope();
-        if (granted.isBlank() && tokenResponse.getAccessToken() != null) {
-            HttpRequest request = transport.createRequestFactory()
-                    .buildGetRequest(new GenericUrl("https://www.googleapis.com/oauth2/v3/tokeninfo"));
-            request.getHeaders().setAuthorization("Bearer " + tokenResponse.getAccessToken());
-            String body = request.execute().parseAsString();
-            JsonObject json = JsonParser.parseString(body).getAsJsonObject();
-            if (json.has("scope") && !json.get("scope").isJsonNull()) {
-                granted = json.get("scope").getAsString();
-            }
-        }
-        return granted.contains(CALENDAR_SCOPE) || granted.contains(CALENDAR_EVENTS_SCOPE);
     }
 
     private String fetchGoogleEmail(NetHttpTransport transport, String accessToken) throws IOException {

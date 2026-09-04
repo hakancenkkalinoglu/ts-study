@@ -18,12 +18,13 @@ public class JwtService {
         this.appProperties = appProperties;
     }
 
-    public String createToken(String username) {
+    public String createToken(long userId, String username) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + appProperties.getJwtExpirationMs());
         return Jwts.builder()
                 .subject(username)
                 .claim("username", username)
+                .claim("uid", userId)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(signingKey())
@@ -43,7 +44,12 @@ public class JwtService {
         if (username == null || username.isBlank()) {
             throw new IllegalArgumentException("Token gecersiz.");
         }
-        return new AuthUser(username);
+        Long userId = claims.get("uid", Long.class);
+        if (userId == null) {
+            Number uid = claims.get("uid", Number.class);
+            userId = uid == null ? null : uid.longValue();
+        }
+        return new AuthUser(userId, username, null);
     }
 
     private SecretKey signingKey() {

@@ -291,9 +291,16 @@
   background: var(--bg-hover);
 }
 
-.btn-create-meet:disabled {
+.btn-google-connect:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.meet-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 
 .meet-link-box {

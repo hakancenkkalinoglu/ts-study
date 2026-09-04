@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import {
   updateAppointment,
   deleteAppointment,
@@ -8,6 +8,8 @@ import {
 } from '../services/api';
 import type { AppointmentWithClient } from '../types';
 import './AddClientModal.css';
+
+const PENDING_MEET_KEY = 'pendingMeetAppointmentId';
 
 interface UpdateAppointmentModalProps {
   isOpen: boolean;
@@ -45,6 +47,7 @@ export const UpdateAppointmentModal = ({
   const [error, setError] = useState<string | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [creatingMeet, setCreatingMeet] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [meetLink, setMeetLink] = useState<string | null>(null);
   const [meetError, setMeetError] = useState<string | null>(null);
 
@@ -68,11 +71,26 @@ export const UpdateAppointmentModal = ({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const google = params.get('google');
-    if (google === 'success') {
-      setGoogleConnected(true);
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []);
+    if (google !== 'success' || !appointment) return;
+    setGoogleConnected(true);
+    window.history.replaceState({}, '', window.location.pathname);
+    sessionStorage.removeItem(PENDING_MEET_KEY);
+    if (appointment.googleMeetLink) return;
+    setCreatingMeet(true);
+    createMeetForAppointment(appointment.id, 60)
+      .then((result) => {
+        setMeetLink(result.meetLink);
+        onSuccess();
+      })
+      .catch((err: unknown) => {
+        const msg =
+          err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+            : null;
+        setMeetError(msg || 'Google Meet oluşturulurken bir hata oluştu.');
+      })
+      .finally(() => setCreatingMeet(false));
+  }, [appointment, onSuccess]);
 
   if (!isOpen || !appointment) return null;
 
@@ -117,17 +135,42 @@ export const UpdateAppointmentModal = ({
     }
   };
 
-  const handleCreateMeet = async () => {
+  const handleMeetClick = async () => {
     setMeetError(null);
+    if (!appointment.clientEmail) {
+      setMeetError('Danışanın e-posta adresi yok. Önce danışan kaydına e-posta ekleyin.');
+      return;
+    }
+    if (!googleConnected) {
+      setConnectingGoogle(true);
+      try {
+        sessionStorage.setItem(PENDING_MEET_KEY, String(appointment.id));
+        const url = await getGoogleAuthUrl();
+        window.location.href = url;
+      } catch {
+        sessionStorage.removeItem(PENDING_MEET_KEY);
+        setMeetError('Google bağlantı adresi alınamadı. GOOGLE_CLIENT_ID ayarlı mı?');
+        setConnectingGoogle(false);
+      }
+      return;
+    }
     setCreatingMeet(true);
     try {
       const result = await createMeetForAppointment(appointment.id, 60);
       setMeetLink(result.meetLink);
+      onSuccess();
     } catch (err: unknown) {
+      const status =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { status?: number } }).response?.status
+          : null;
       const msg =
         err && typeof err === 'object' && 'response' in err
           ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
           : null;
+      if (status === 403) {
+        setGoogleConnected(false);
+      }
       setMeetError(msg || 'Google Meet oluşturulurken bir hata oluştu.');
     } finally {
       setCreatingMeet(false);
@@ -202,49 +245,46 @@ export const UpdateAppointmentModal = ({
 
           <div className="form-group google-meet-section">
             <label>Google Meet</label>
-            {!googleConnected ? (
-              <a
-                href={getGoogleAuthUrl()}
-                className="btn-google-connect"
-                rel="noopener noreferrer"
-              >
-                Google Calendar ile bağlan
-              </a>
-            ) : (
+            {!displayMeetLink ? (
               <>
-                {!displayMeetLink ? (
+                <button
+                  type="button"
+                  className="btn-google-connect"
+                  onClick={handleMeetClick}
+                  disabled={creatingMeet || connectingGoogle}
+                >
+                  {connectingGoogle
+                    ? 'Google’a yönlendiriliyor...'
+                    : creatingMeet
+                      ? 'Meet oluşturuluyor...'
+                      : 'Google Meet oluştur'}
+                </button>
+                <p className="meet-hint">
+                  Psikolog ve danışan e-postalarına davet gider, ardından toplantı linki burada görünür.
+                </p>
+              </>
+            ) : (
+              <div className="meet-links-display">
+                <div className="meet-link-box">
+                  <a href={displayMeetLink} target="_blank" rel="noopener noreferrer" className="meet-link">
+                    Meet linki – yeni sekmede aç
+                  </a>
                   <button
                     type="button"
-                    className="btn-create-meet"
-                    onClick={handleCreateMeet}
-                    disabled={creatingMeet}
+                    className="btn-copy-meet"
+                    onClick={() => navigator.clipboard.writeText(displayMeetLink)}
                   >
-                    {creatingMeet ? 'Oluşturuluyor...' : 'Google Meet oluştur'}
+                    Kopyala
                   </button>
-                ) : (
-                  <div className="meet-links-display">
-                    <div className="meet-link-box">
-                      <a href={displayMeetLink} target="_blank" rel="noopener noreferrer" className="meet-link">
-                        Meet linki – yeni sekmede aç
-                      </a>
-                      <button
-                        type="button"
-                        className="btn-copy-meet"
-                        onClick={() => navigator.clipboard.writeText(displayMeetLink)}
-                      >
-                        Kopyala
-                      </button>
-                    </div>
-                    {appointment.googleHtmlLink && (
-                      <a href={appointment.googleHtmlLink} target="_blank" rel="noopener noreferrer" className="calendar-link">
-                        Takvimde aç
-                      </a>
-                    )}
-                  </div>
+                </div>
+                {appointment.googleHtmlLink && (
+                  <a href={appointment.googleHtmlLink} target="_blank" rel="noopener noreferrer" className="calendar-link">
+                    Takvimde aç
+                  </a>
                 )}
-                {meetError && <div className="error-message">{meetError}</div>}
-              </>
+              </div>
             )}
+            {meetError && <div className="error-message">{meetError}</div>}
           </div>
 
           {error && <div className="error-message">{error}</div>}

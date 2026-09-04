@@ -22,8 +22,11 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
-      window.location.href = '/';
+      const url = String(err.config?.url || '');
+      if (!url.includes('/auth/login') && !url.includes('/auth/register') && !url.includes('/auth/google/login')) {
+        localStorage.removeItem(TOKEN_KEY);
+        window.location.href = '/';
+      }
     }
     return Promise.reject(err);
   }
@@ -34,11 +37,22 @@ export const setStoredToken = (token: string): void => localStorage.setItem(TOKE
 export const clearStoredToken = (): void => localStorage.removeItem(TOKEN_KEY);
 
 export const login = async (
-  username: string,
+  email: string,
   password: string
-): Promise<{ token: string; username: string }> => {
-  const response = await api.post<{ token: string; username: string }>('/auth/login', {
-    username,
+): Promise<{ token: string; username: string; email?: string }> => {
+  const response = await api.post<{ token: string; username: string; email?: string }>('/auth/login', {
+    email,
+    password,
+  });
+  return response.data;
+};
+
+export const register = async (
+  email: string,
+  password: string
+): Promise<{ token: string; username: string; email?: string }> => {
+  const response = await api.post<{ token: string; username: string; email?: string }>('/auth/register', {
+    email,
     password,
   });
   return response.data;
@@ -149,8 +163,14 @@ export const getAppointmentById = async (id: number): Promise<AppointmentWithCli
 };
 
 // Google Calendar / Meet
-export const getGoogleAuthUrl = (): string => {
-  return `${API_BASE_URL}/auth/google`;
+export const getGoogleLoginUrl = async (): Promise<string> => {
+  const response = await api.get<{ url: string }>('/auth/google/login');
+  return response.data.url;
+};
+
+export const getGoogleAuthUrl = async (): Promise<string> => {
+  const response = await api.get<{ url: string }>('/auth/google');
+  return response.data.url;
 };
 
 export const getGoogleAuthStatus = async (): Promise<{ connected: boolean }> => {

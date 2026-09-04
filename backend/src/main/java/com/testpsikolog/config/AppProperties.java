@@ -7,7 +7,7 @@ public class AppProperties {
 
     private String jwtSecret = "testpsikolog-secret-change-in-production";
     private long jwtExpirationMs = 604800000L;
-    private String frontendUrl = "http://localhost:5173";
+    private String frontendUrl = "http://localhost:5174";
     private String corsOrigins = "http://localhost:5173,http://localhost:5174";
     private String seedUsername = "testpsikolog";
     private String seedPassword = "test1234";

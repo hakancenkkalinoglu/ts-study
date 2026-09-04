@@ -33,6 +33,7 @@ export type Appointment = {
 export type AppointmentWithClient = Appointment & {
   clientName: string | null;
   agreedFee: number | null;
+  clientEmail?: string | null;
 };
 
 export type CreateAppointmentInput = {

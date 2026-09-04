@@ -32,23 +32,35 @@ public class ClientService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public List<ClientResponse> getAll(String search) {
+    public List<ClientResponse> getAll(long userId, String search) {
         if (search != null && !search.trim().isEmpty()) {
             String pattern = "%" + search.trim() + "%";
             return jdbc.query(
-                    "SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt FROM clients WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC",
+                    """
+                    SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt
+                    FROM clients
+                    WHERE userId = ? AND (name LIKE ? OR email LIKE ?)
+                    ORDER BY name ASC
+                    """,
                     CLIENT_MAPPER,
+                    userId,
                     pattern,
                     pattern
             );
         }
         return jdbc.query(
-                "SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt FROM clients ORDER BY name ASC",
-                CLIENT_MAPPER
+                """
+                SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt
+                FROM clients
+                WHERE userId = ?
+                ORDER BY name ASC
+                """,
+                CLIENT_MAPPER,
+                userId
         );
     }
 
-    public long create(CreateClientRequest request) {
+    public long create(long userId, CreateClientRequest request) {
         String hashed = null;
         if (request.password() != null && !request.password().isBlank()) {
             hashed = passwordEncoder.encode(request.password());
@@ -56,26 +68,22 @@ public class ClientService {
         int agreedFee = request.agreedFee() == null ? 2000 : request.agreedFee();
         jdbc.update(
                 """
-                INSERT INTO clients (email, name, birthDate, agreedFee, password, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 """,
                 request.email(),
                 request.name(),
                 request.birthDate(),
                 agreedFee,
-                hashed
+                hashed,
+                userId
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return id == null ? 0L : id;
     }
 
-    public int update(long id, UpdateClientRequest data) {
-        Integer exists = jdbc.query(
-                "SELECT id FROM clients WHERE id = ?",
-                rs -> rs.next() ? rs.getInt("id") : null,
-                id
-        );
-        if (exists == null) {
+    public int update(long userId, long id, UpdateClientRequest data) {
+        if (!ownsClient(userId, id)) {
             return 0;
         }
         String hashed = null;
@@ -92,7 +100,7 @@ public class ClientService {
                   agreedFee = CASE WHEN ? IS NOT NULL THEN ? ELSE agreedFee END,
                   password = COALESCE(?, password),
                   updatedAt = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND userId = ?
                 """,
                 data.email(),
                 data.name(),
@@ -100,22 +108,28 @@ public class ClientService {
                 data.agreedFee(),
                 data.agreedFee(),
                 hashed,
-                id
+                id,
+                userId
         );
     }
 
-    public int delete(long id) {
-        return jdbc.update("DELETE FROM clients WHERE id = ?", id);
+    public int delete(long userId, long id) {
+        return jdbc.update("DELETE FROM clients WHERE id = ? AND userId = ?", id, userId);
     }
 
-    public void requireExists(long id) {
-        Integer exists = jdbc.query(
-                "SELECT id FROM clients WHERE id = ?",
-                rs -> rs.next() ? rs.getInt("id") : null,
-                id
-        );
-        if (exists == null) {
+    public void requireOwned(long userId, long clientId) {
+        if (!ownsClient(userId, clientId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found");
         }
+    }
+
+    public boolean ownsClient(long userId, long clientId) {
+        Integer exists = jdbc.query(
+                "SELECT id FROM clients WHERE id = ? AND userId = ?",
+                rs -> rs.next() ? rs.getInt("id") : null,
+                clientId,
+                userId
+        );
+        return exists != null;
     }
 }

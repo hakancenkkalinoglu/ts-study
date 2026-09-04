@@ -9,6 +9,7 @@ import com.testpsikolog.dto.NoteResponse;
 import com.testpsikolog.dto.UpdateClientRequest;
 import com.testpsikolog.dto.UpdatedResponse;
 import com.testpsikolog.service.ClientService;
+import com.testpsikolog.service.CurrentUserService;
 import com.testpsikolog.service.NoteService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -30,26 +31,35 @@ public class ClientController {
 
     private final ClientService clientService;
     private final NoteService noteService;
+    private final CurrentUserService currentUserService;
 
-    public ClientController(ClientService clientService, NoteService noteService) {
+    public ClientController(
+            ClientService clientService,
+            NoteService noteService,
+            CurrentUserService currentUserService
+    ) {
         this.clientService = clientService;
         this.noteService = noteService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/clients")
     public List<ClientResponse> getClients(@RequestParam(value = "search", required = false) String search) {
-        return clientService.getAll(search);
+        long userId = currentUserService.requireUser().id();
+        return clientService.getAll(userId, search);
     }
 
     @PostMapping("/clients")
     @ResponseStatus(HttpStatus.CREATED)
     public IdResponse createClient(@RequestBody CreateClientRequest request) {
-        return new IdResponse(clientService.create(request));
+        long userId = currentUserService.requireUser().id();
+        return new IdResponse(clientService.create(userId, request));
     }
 
     @PutMapping("/clients/{id}")
     public UpdatedResponse updateClient(@PathVariable long id, @RequestBody UpdateClientRequest request) {
-        int updated = clientService.update(id, request);
+        long userId = currentUserService.requireUser().id();
+        int updated = clientService.update(userId, id, request);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found");
         }
@@ -58,7 +68,8 @@ public class ClientController {
 
     @DeleteMapping("/clients/{id}")
     public DeletedResponse deleteClient(@PathVariable long id) {
-        int deleted = clientService.delete(id);
+        long userId = currentUserService.requireUser().id();
+        int deleted = clientService.delete(userId, id);
         if (deleted == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found");
         }
@@ -67,12 +78,14 @@ public class ClientController {
 
     @GetMapping("/clients/{clientId}/notes")
     public List<NoteResponse> getClientNotes(@PathVariable long clientId) {
-        return noteService.getByClientId(clientId);
+        long userId = currentUserService.requireUser().id();
+        return noteService.getByClientId(userId, clientId);
     }
 
     @PostMapping("/clients/{clientId}/notes")
     @ResponseStatus(HttpStatus.CREATED)
     public IdResponse createClientNote(@PathVariable long clientId, @RequestBody CreateNoteRequest body) {
+        long userId = currentUserService.requireUser().id();
         CreateNoteRequest merged = new CreateNoteRequest(
                 clientId,
                 body.appointmentId(),
@@ -80,6 +93,6 @@ public class ClientController {
                 body.content(),
                 body.noteDate()
         );
-        return new IdResponse(noteService.create(merged));
+        return new IdResponse(noteService.create(userId, merged));
     }
 }

@@ -50,6 +50,20 @@ export const Calendar = () => {
     loadAppointments();
   }, [loadAppointments]);
 
+  useEffect(() => {
+    if (loading) return;
+    const pending = sessionStorage.getItem('pendingMeetAppointmentId');
+    if (!pending) return;
+    const google = new URLSearchParams(window.location.search).get('google');
+    if (google === 'success') {
+      const apt = appointments.find((a) => String(a.id) === pending);
+      if (apt) {
+        setUpdateModalAppointment(apt);
+      }
+    }
+    sessionStorage.removeItem('pendingMeetAppointmentId');
+  }, [loading, appointments]);
+
   const goPrev = () => {
     if (viewMode === 'day') setCurrentDate((d) => subDays(d, 1));
     else if (viewMode === 'week') setCurrentDate((d) => subWeeks(d, 1));

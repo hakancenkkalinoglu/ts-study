@@ -13,6 +13,7 @@ public record AppointmentResponse(
         String createdAt,
         String updatedAt,
         String clientName,
-        Integer agreedFee
+        Integer agreedFee,
+        String clientEmail
 ) {
 }

@@ -1,4 +1,4 @@
 package com.testpsikolog.security;
 
-public record AuthUser(String username) {
+public record AuthUser(Long id, String username, String email) {
 }
