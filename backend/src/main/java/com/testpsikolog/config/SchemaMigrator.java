@@ -52,6 +52,21 @@ public class SchemaMigrator implements ApplicationRunner {
                 WHERE email IS NULL AND username LIKE '%@%'
                 """
         );
+
+        if (!hasColumn("appointments", "status")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN status TEXT");
+        }
+        jdbc.update("UPDATE appointments SET status = 'scheduled' WHERE status IS NULL OR status = ''");
+
+        if (!hasColumn("clients", "phone")) {
+            jdbc.execute("ALTER TABLE clients ADD COLUMN phone TEXT");
+        }
+        if (!hasColumn("clients", "emergencyName")) {
+            jdbc.execute("ALTER TABLE clients ADD COLUMN emergencyName TEXT");
+        }
+        if (!hasColumn("clients", "emergencyPhone")) {
+            jdbc.execute("ALTER TABLE clients ADD COLUMN emergencyPhone TEXT");
+        }
     }
 
     private boolean hasColumn(String table, String column) {

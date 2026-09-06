@@ -5,6 +5,9 @@ public record UpdateClientRequest(
         String name,
         String birthDate,
         Integer agreedFee,
-        String password
+        String password,
+        String phone,
+        String emergencyName,
+        String emergencyPhone
 ) {
 }

@@ -14,12 +14,18 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ClientService {
 
+    private static final String CLIENT_COLUMNS =
+            "id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt, updatedAt";
+
     private static final RowMapper<ClientResponse> CLIENT_MAPPER = (rs, rowNum) -> new ClientResponse(
             rs.getLong("id"),
             rs.getString("email"),
             rs.getString("name"),
             rs.getString("birthDate"),
             rs.getObject("agreedFee") == null ? null : rs.getInt("agreedFee"),
+            rs.getString("phone"),
+            rs.getString("emergencyName"),
+            rs.getString("emergencyPhone"),
             rs.getString("createdAt"),
             rs.getString("updatedAt")
     );
@@ -36,25 +42,19 @@ public class ClientService {
         if (search != null && !search.trim().isEmpty()) {
             String pattern = "%" + search.trim() + "%";
             return jdbc.query(
-                    """
-                    SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt
-                    FROM clients
-                    WHERE userId = ? AND (name LIKE ? OR email LIKE ?)
-                    ORDER BY name ASC
-                    """,
+                    "SELECT " + CLIENT_COLUMNS
+                            + " FROM clients WHERE userId = ? AND (name LIKE ? OR email LIKE ? OR phone LIKE ? OR emergencyPhone LIKE ? OR emergencyName LIKE ?) ORDER BY name ASC",
                     CLIENT_MAPPER,
                     userId,
+                    pattern,
+                    pattern,
+                    pattern,
                     pattern,
                     pattern
             );
         }
         return jdbc.query(
-                """
-                SELECT id, email, name, birthDate, agreedFee, createdAt, updatedAt
-                FROM clients
-                WHERE userId = ?
-                ORDER BY name ASC
-                """,
+                "SELECT " + CLIENT_COLUMNS + " FROM clients WHERE userId = ? ORDER BY name ASC",
                 CLIENT_MAPPER,
                 userId
         );
@@ -68,15 +68,18 @@ public class ClientService {
         int agreedFee = request.agreedFee() == null ? 2000 : request.agreedFee();
         jdbc.update(
                 """
-                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 """,
                 request.email(),
                 request.name(),
                 request.birthDate(),
                 agreedFee,
                 hashed,
-                userId
+                userId,
+                blankToNull(request.phone()),
+                blankToNull(request.emergencyName()),
+                blankToNull(request.emergencyPhone())
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return id == null ? 0L : id;
@@ -99,6 +102,9 @@ public class ClientService {
                   birthDate = COALESCE(?, birthDate),
                   agreedFee = CASE WHEN ? IS NOT NULL THEN ? ELSE agreedFee END,
                   password = COALESCE(?, password),
+                  phone = COALESCE(?, phone),
+                  emergencyName = COALESCE(?, emergencyName),
+                  emergencyPhone = COALESCE(?, emergencyPhone),
                   updatedAt = datetime('now')
                 WHERE id = ? AND userId = ?
                 """,
@@ -108,9 +114,26 @@ public class ClientService {
                 data.agreedFee(),
                 data.agreedFee(),
                 hashed,
+                trimPresent(data.phone()),
+                trimPresent(data.emergencyName()),
+                trimPresent(data.emergencyPhone()),
                 id,
                 userId
         );
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private static String trimPresent(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.trim();
     }
 
     public int delete(long userId, long id) {

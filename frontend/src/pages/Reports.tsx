@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
+import { appointmentStatus } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -62,7 +63,7 @@ export const Reports = () => {
     .reduce((sum, a) => sum + fee(a), 0);
 
   const pendingTotal = appointments
-    .filter((a) => !a.isPaid)
+    .filter((a) => !a.isPaid && appointmentStatus(a.status) !== 'cancelled')
     .reduce((sum, a) => sum + fee(a), 0);
 
   const chartData = [

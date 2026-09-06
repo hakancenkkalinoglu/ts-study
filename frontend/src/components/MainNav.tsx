@@ -21,6 +21,12 @@ export const MainNav = ({ onLogout }: MainNavProps) => {
           end
           className={({ isActive }) => `nav-tab ${isActive ? 'nav-tab-active' : ''}`}
         >
+          Bugün
+        </NavLink>
+        <NavLink
+          to="/danisanlar"
+          className={({ isActive }) => `nav-tab ${isActive ? 'nav-tab-active' : ''}`}
+        >
           Danışanlar
         </NavLink>
         <NavLink

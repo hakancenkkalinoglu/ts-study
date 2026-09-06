@@ -41,10 +41,27 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.client-info-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
 .client-info-card h1 {
   color: var(--text-primary);
   font-size: 32px;
-  margin: 0 0 24px 0;
+  margin: 0;
+}
+
+.info-value a {
+  color: var(--accent-color, #2563eb);
+  text-decoration: none;
+}
+
+.info-value a:hover {
+  text-decoration: underline;
 }
 
 .info-grid {
@@ -180,6 +197,34 @@
 .appointment-title {
   color: var(--text-secondary);
   font-size: 15px;
+}
+
+.appointment-status-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.appointment-status-badge.status-scheduled {
+  background: rgba(108, 117, 125, 0.16);
+  color: var(--text-secondary);
+}
+
+.appointment-status-badge.status-attended {
+  background: rgba(40, 167, 69, 0.16);
+  color: #228b22;
+}
+
+.appointment-status-badge.status-no_show {
+  background: rgba(220, 53, 69, 0.14);
+  color: #c0392b;
+}
+
+.appointment-status-badge.status-cancelled {
+  background: rgba(108, 117, 125, 0.2);
+  color: var(--text-secondary);
+  text-decoration: line-through;
 }
 
 .appointment-paid-badge {
@@ -458,6 +503,7 @@
 }
 
 .note-form input,
+.note-form select,
 .note-form textarea {
   width: 100%;
   padding: 12px;
@@ -471,6 +517,7 @@
 }
 
 .note-form input:focus,
+.note-form select:focus,
 .note-form textarea:focus {
   outline: none;
   border-color: var(--accent-color);
@@ -571,6 +618,11 @@
   .appointments-section,
   .notes-section {
     padding: 20px;
+  }
+
+  .client-info-head {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .client-info-card h1 {

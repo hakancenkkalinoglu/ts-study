@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllAppointments, updateAppointment } from '../services/api';
 import type { AppointmentWithClient } from '../types';
+import { appointmentStatus, appointmentStatusLabel } from '../types';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import './Payments.css';
@@ -31,7 +32,9 @@ export const Payments = () => {
     loadAppointments();
   }, [loadAppointments]);
 
-  const pendingAppointments = appointments.filter((apt) => !(apt.isPaid ?? 0));
+  const pendingAppointments = appointments.filter(
+    (apt) => !(apt.isPaid ?? 0) && appointmentStatus(apt.status) !== 'cancelled'
+  );
   const completedAppointments = appointments.filter((apt) => apt.isPaid ?? 0);
 
   const handleTogglePayment = async (apt: AppointmentWithClient) => {
@@ -107,6 +110,7 @@ export const Payments = () => {
                   <th>Saat</th>
                   <th>Danışan</th>
                   <th>Başlık</th>
+                  <th>Seans</th>
                   <th>Durum</th>
                   <th>İşlem</th>
                 </tr>
@@ -126,6 +130,7 @@ export const Payments = () => {
                       </button>
                     </td>
                     <td>{apt.title || '-'}</td>
+                    <td>{appointmentStatusLabel(apt.status)}</td>
                     <td>
                       <span className={`status-badge ${apt.isPaid ? 'paid' : 'unpaid'}`}>
                         {apt.isPaid ? 'Ödendi' : 'Bekliyor'}

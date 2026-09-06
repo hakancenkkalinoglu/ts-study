@@ -20,6 +20,7 @@ import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
 import { AddAppointmentModal } from '../components/AddAppointmentModal';
 import { UpdateAppointmentModal } from '../components/UpdateAppointmentModal';
+import { appointmentStatus } from '../types';
 import './Calendar.css';
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -138,7 +139,7 @@ export const Calendar = () => {
             apts.map((apt) => (
               <div
                 key={apt.id}
-                className="calendar-apt-card"
+                className={`calendar-apt-card status-${appointmentStatus(apt.status)}`}
                 onClick={(e) => openUpdateModal(apt, e)}
               >
                 <div className="apt-time">{formatTime(apt.appointmentTime)}</div>
@@ -190,7 +191,7 @@ export const Calendar = () => {
                 {apts.map((apt) => (
                   <div
                     key={apt.id}
-                    className="calendar-apt-card small"
+                    className={`calendar-apt-card small status-${appointmentStatus(apt.status)}`}
                     onClick={(e) => openUpdateModal(apt, e)}
                   >
                     <span className="apt-time-sm">{formatTime(apt.appointmentTime)}</span>
@@ -244,7 +245,7 @@ export const Calendar = () => {
                   {apts.slice(0, 3).map((apt) => (
                     <div
                       key={apt.id}
-                      className="calendar-apt-card tiny"
+                      className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)}`}
                       onClick={(e) => openUpdateModal(apt, e)}
                       title={`${formatTime(apt.appointmentTime)} - ${apt.clientName || 'Danışan'}${apt.title ? ` - ${apt.title}` : ''}`}
                     >

@@ -14,6 +14,9 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
     name: '',
     birthDate: '',
     agreedFee: 2000,
+    phone: '',
+    emergencyName: '',
+    emergencyPhone: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +34,20 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
         name: formData.name || undefined,
         birthDate: formData.birthDate || undefined,
         agreedFee: formData.agreedFee,
+        phone: formData.phone || undefined,
+        emergencyName: formData.emergencyName || undefined,
+        emergencyPhone: formData.emergencyPhone || undefined,
       });
       onSuccess();
-      setFormData({ email: '', name: '', birthDate: '', agreedFee: 2000 });
+      setFormData({
+        email: '',
+        name: '',
+        birthDate: '',
+        agreedFee: 2000,
+        phone: '',
+        emergencyName: '',
+        emergencyPhone: '',
+      });
       onClose();
     } catch (err) {
       setError('Danışan eklenirken bir hata oluştu.');
@@ -77,6 +91,36 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
               id="birthDate"
               value={formData.birthDate}
               onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="phone">Telefon</label>
+            <input
+              type="tel"
+              id="phone"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="05xx xxx xx xx"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="emergencyName">Acil kişi</label>
+            <input
+              type="text"
+              id="emergencyName"
+              value={formData.emergencyName}
+              onChange={(e) => setFormData({ ...formData, emergencyName: e.target.value })}
+              placeholder="Ad soyad"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="emergencyPhone">Acil kişi telefonu</label>
+            <input
+              type="tel"
+              id="emergencyPhone"
+              value={formData.emergencyPhone}
+              onChange={(e) => setFormData({ ...formData, emergencyPhone: e.target.value })}
+              placeholder="05xx xxx xx xx"
             />
           </div>
           <div className="form-group">

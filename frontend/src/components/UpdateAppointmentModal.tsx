@@ -6,7 +6,8 @@ import {
   getGoogleAuthStatus,
   createMeetForAppointment,
 } from '../services/api';
-import type { AppointmentWithClient } from '../types';
+import type { AppointmentStatus, AppointmentWithClient } from '../types';
+import { APPOINTMENT_STATUSES, appointmentStatus } from '../types';
 import './AddClientModal.css';
 
 const PENDING_MEET_KEY = 'pendingMeetAppointmentId';
@@ -33,6 +34,7 @@ export const UpdateAppointmentModal = ({
       appointmentTime: apt.appointmentTime || '09:00',
       title: apt.title || '',
       isPaid: !!(apt.isPaid ?? 0),
+      status: appointmentStatus(apt.status),
     };
   };
 
@@ -41,6 +43,7 @@ export const UpdateAppointmentModal = ({
     appointmentTime: '09:00',
     title: '',
     isPaid: false,
+    status: 'scheduled' as AppointmentStatus,
   });
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -107,6 +110,7 @@ export const UpdateAppointmentModal = ({
         appointmentTime: formData.appointmentTime || initialFormData.appointmentTime,
         title: formData.title || undefined,
         isPaid: formData.isPaid,
+        status: formData.status,
       });
       onSuccess();
       onClose();
@@ -119,7 +123,7 @@ export const UpdateAppointmentModal = ({
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Bu randevuyu silmek istediğinize emin misiniz?')) return;
+    if (!window.confirm('Randevu ve notları kalıcı silinsin mi? Gelmedi / iptal için durumu değiştirmen yeterli.')) return;
     setError(null);
     setDeleting(true);
 
@@ -229,6 +233,22 @@ export const UpdateAppointmentModal = ({
               }
             />
           </div>
+          <div className="form-group">
+            <label htmlFor="appointmentStatus">Durum</label>
+            <select
+              id="appointmentStatus"
+              value={currentFormData.status}
+              onChange={(e) =>
+                setFormData({ ...formData, status: appointmentStatus(e.target.value) })
+              }
+            >
+              {APPOINTMENT_STATUSES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="form-group form-group-toggle">
             <label>Ödeme Yapıldı mı?</label>
             <label className="toggle-switch">
@@ -295,7 +315,7 @@ export const UpdateAppointmentModal = ({
               className="btn-danger"
               disabled={deleting}
             >
-              {deleting ? 'Siliniyor...' : 'Sil'}
+              {deleting ? 'Siliniyor...' : 'Kalıcı sil'}
             </button>
             <div className="modal-actions-group">
               <button type="button" onClick={onClose} className="btn-secondary">

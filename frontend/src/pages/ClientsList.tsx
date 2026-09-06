@@ -66,7 +66,7 @@ export const ClientsList = () => {
         <div className="clients-header-actions">
           <input
             type="search"
-            placeholder="Danışan ara (ad, e-posta)..."
+            placeholder="Danışan ara (ad, e-posta, telefon)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="search-input"
@@ -97,6 +97,7 @@ export const ClientsList = () => {
               <tr>
                 <th>Ad Soyad</th>
                 <th>E-posta</th>
+                <th>Telefon</th>
                 <th>Doğum Tarihi</th>
                 <th>Kayıt Tarihi</th>
                 <th>İşlemler</th>
@@ -111,6 +112,7 @@ export const ClientsList = () => {
                 >
                   <td>{client.name || '-'}</td>
                   <td>{client.email}</td>
+                  <td>{client.phone || '-'}</td>
                   <td>{formatDate(client.birthDate)}</td>
                   <td>{formatDate(client.createdAt)}</td>
                   <td>

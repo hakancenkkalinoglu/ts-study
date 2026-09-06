@@ -20,6 +20,7 @@ public class AppointmentService {
             rs.getString("appointmentTime"),
             rs.getString("title"),
             rs.getInt("isPaid"),
+            readStatus(rs),
             rs.getString("googleEventId"),
             rs.getString("googleMeetLink"),
             rs.getString("googleHtmlLink"),
@@ -46,16 +47,18 @@ public class AppointmentService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu tarih ve saatte zaten bir randevu mevcut.");
         }
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
+        String status = normalizeStatus(input.status());
         jdbc.update(
                 """
-                INSERT INTO appointments (clientId, appointmentDate, appointmentTime, title, isPaid, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                INSERT INTO appointments (clientId, appointmentDate, appointmentTime, title, isPaid, status, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 """,
                 clientId,
                 dateStr,
                 timeStr,
                 input.title(),
-                isPaid
+                isPaid,
+                status
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return id == null ? 0L : id;
@@ -132,6 +135,7 @@ public class AppointmentService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu tarih ve saatte zaten bir randevu mevcut.");
         }
         Integer isPaidVal = data.isPaid() == null ? null : (Boolean.TRUE.equals(data.isPaid()) ? 1 : 0);
+        String statusVal = data.status() == null ? null : normalizeStatus(data.status());
         return jdbc.update(
                 """
                 UPDATE appointments
@@ -140,6 +144,7 @@ public class AppointmentService {
                   appointmentTime = COALESCE(?, appointmentTime),
                   title = COALESCE(?, title),
                   isPaid = CASE WHEN ? IS NOT NULL THEN ? ELSE isPaid END,
+                  status = COALESCE(?, status),
                   updatedAt = datetime('now')
                 WHERE id = ? AND clientId = ?
                 """,
@@ -148,6 +153,7 @@ public class AppointmentService {
                 data.title(),
                 isPaidVal,
                 isPaidVal,
+                statusVal,
                 appointmentId,
                 clientId
         );
@@ -195,6 +201,7 @@ public class AppointmentService {
                     SELECT a.id FROM appointments a
                     INNER JOIN clients c ON a.clientId = c.id
                     WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ? AND a.id != ?
+                      AND COALESCE(a.status, 'scheduled') != 'cancelled'
                     """,
                     rs -> rs.next() ? rs.getInt("id") : null,
                     userId,
@@ -208,6 +215,7 @@ public class AppointmentService {
                     SELECT a.id FROM appointments a
                     INNER JOIN clients c ON a.clientId = c.id
                     WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ?
+                      AND COALESCE(a.status, 'scheduled') != 'cancelled'
                     """,
                     rs -> rs.next() ? rs.getInt("id") : null,
                     userId,
@@ -216,6 +224,25 @@ public class AppointmentService {
             );
         }
         return existing != null;
+    }
+
+    private static String readStatus(java.sql.ResultSet rs) throws java.sql.SQLException {
+        if (!columnExists(rs, "status")) {
+            return "scheduled";
+        }
+        String value = rs.getString("status");
+        return normalizeStatus(value);
+    }
+
+    private static String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "scheduled";
+        }
+        String value = status.trim().toLowerCase();
+        if (value.equals("attended") || value.equals("no_show") || value.equals("cancelled")) {
+            return value;
+        }
+        return "scheduled";
     }
 
     private static String normalizeDate(String d) {

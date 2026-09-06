@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { MainNav } from './components/MainNav';
 import { Login } from './pages/Login';
+import { Today } from './pages/Today';
 import { ClientsList } from './pages/ClientsList';
 import { ClientDetail } from './pages/ClientDetail';
 import { Calendar } from './pages/Calendar';
@@ -43,7 +44,8 @@ function App() {
         <div className="app">
           <MainNav onLogout={() => setToken(null)} />
           <Routes>
-            <Route path="/" element={<ClientsList />} />
+            <Route path="/" element={<Today />} />
+            <Route path="/danisanlar" element={<ClientsList />} />
             <Route path="/takvim" element={<Calendar />} />
             <Route path="/odemeler" element={<Payments />} />
             <Route path="/raporlar" element={<Reports />} />

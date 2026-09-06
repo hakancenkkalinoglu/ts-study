@@ -7,6 +7,7 @@ public record AppointmentResponse(
         String appointmentTime,
         String title,
         int isPaid,
+        String status,
         String googleEventId,
         String googleMeetLink,
         String googleHtmlLink,

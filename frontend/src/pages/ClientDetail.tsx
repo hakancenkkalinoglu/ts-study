@@ -8,9 +8,10 @@ import {
   createAppointment,
   createAppointmentNote,
   updateAppointment,
-  deleteAppointment,
+  updateClient,
 } from '../services/api';
-import type { Client, Note, Appointment } from '../types';
+import type { Appointment, AppointmentStatus, Client, Note } from '../types';
+import { APPOINTMENT_STATUSES, appointmentStatus, appointmentStatusLabel } from '../types';
 import './ClientDetail.css';
 
 export const ClientDetail = () => {
@@ -27,12 +28,20 @@ export const ClientDetail = () => {
   const [showNoteFormFor, setShowNoteFormFor] = useState<number | null>(null);
   const [editingAppointmentId, setEditingAppointmentId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    phone: '',
+    emergencyName: '',
+    emergencyPhone: '',
+  });
+  const [savingContact, setSavingContact] = useState(false);
 
   const [appointmentForm, setAppointmentForm] = useState({
     appointmentDate: new Date().toISOString().split('T')[0],
     appointmentTime: '09:00',
     title: '',
     isPaid: false,
+    status: 'scheduled' as AppointmentStatus,
   });
   const [noteForm, setNoteForm] = useState({
     title: '',
@@ -48,6 +57,11 @@ export const ClientDetail = () => {
       const foundClient = clients.find((c) => c.id === Number(id));
       if (foundClient) {
         setClient(foundClient);
+        setContactForm({
+          phone: foundClient.phone || '',
+          emergencyName: foundClient.emergencyName || '',
+          emergencyPhone: foundClient.emergencyPhone || '',
+        });
         const [appointmentsData, notesData] = await Promise.all([
           getAppointments(foundClient.id),
           getClientNotes(foundClient.id),
@@ -93,6 +107,7 @@ export const ClientDetail = () => {
         appointmentTime: '09:00',
         title: '',
         isPaid: false,
+        status: 'scheduled',
       });
       setShowAppointmentForm(false);
       loadClientData();
@@ -119,6 +134,7 @@ export const ClientDetail = () => {
         appointmentTime: appointmentForm.appointmentTime,
         title: appointmentForm.title || undefined,
         isPaid: appointmentForm.isPaid,
+        status: appointmentForm.status,
       });
       setEditingAppointmentId(null);
       setAppointmentForm({
@@ -126,6 +142,7 @@ export const ClientDetail = () => {
         appointmentTime: '09:00',
         title: '',
         isPaid: false,
+        status: 'scheduled',
       });
       loadClientData();
     } catch (error: unknown) {
@@ -142,15 +159,15 @@ export const ClientDetail = () => {
   const handleDeleteAppointment = async (appointmentId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!client) return;
-    if (!window.confirm('Bu randevuyu silmek istediğinize emin misiniz? Randevuya ait notlar da silinecektir.')) return;
+    if (!window.confirm('Randevu iptal edilsin mi? Kayıt ve notlar durur, saat boşalır.')) return;
 
     try {
-      await deleteAppointment(client.id, appointmentId);
+      await updateAppointment(client.id, appointmentId, { status: 'cancelled' });
       setEditingAppointmentId(null);
       loadClientData();
     } catch (error) {
-      console.error('Error deleting appointment:', error);
-      alert('Randevu silinirken bir hata oluştu.');
+      console.error('Error cancelling appointment:', error);
+      alert('Randevu iptal edilirken bir hata oluştu.');
     }
   };
 
@@ -164,6 +181,7 @@ export const ClientDetail = () => {
       appointmentTime: apt.appointmentTime || '09:00',
       title: apt.title || '',
       isPaid: !!(apt.isPaid ?? 0),
+      status: appointmentStatus(apt.status),
     });
   };
 
@@ -198,6 +216,26 @@ export const ClientDetail = () => {
     });
   };
 
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client) return;
+    try {
+      setSavingContact(true);
+      await updateClient(client.id, {
+        phone: contactForm.phone,
+        emergencyName: contactForm.emergencyName,
+        emergencyPhone: contactForm.emergencyPhone,
+      });
+      setEditingContact(false);
+      loadClientData();
+    } catch (error) {
+      console.error('Error updating client contact:', error);
+      alert('İletişim bilgileri kaydedilemedi.');
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('tr-TR', {
@@ -220,7 +258,7 @@ export const ClientDetail = () => {
       <div className="client-detail-container">
         <div className="error-state">
           <p>Danışan bulunamadı.</p>
-          <button onClick={() => navigate('/')} className="back-button">
+          <button onClick={() => navigate('/danisanlar')} className="back-button">
             Geri Dön
           </button>
         </div>
@@ -230,32 +268,111 @@ export const ClientDetail = () => {
 
   return (
     <div className="client-detail-container">
-      <button onClick={() => navigate('/')} className="back-button">
+      <button onClick={() => navigate('/danisanlar')} className="back-button">
         ← Geri Dön
       </button>
 
       <div className="client-info-card">
-        <h1>{client.name || 'İsimsiz Danışan'}</h1>
-        <div className="info-grid">
-          <div className="info-item">
-            <span className="info-label">E-posta:</span>
-            <span className="info-value">{client.email}</span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">Doğum Tarihi:</span>
-            <span className="info-value">{formatDate(client.birthDate)}</span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">Anlaşılan Ücret:</span>
-            <span className="info-value">
-              {client.agreedFee != null ? `${client.agreedFee.toLocaleString('tr-TR')} ₺` : '-'}
-            </span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">Kayıt Tarihi:</span>
-            <span className="info-value">{formatDate(client.createdAt)}</span>
-          </div>
+        <div className="client-info-head">
+          <h1>{client.name || 'İsimsiz Danışan'}</h1>
+          {!editingContact ? (
+            <button type="button" className="edit-apt-button" onClick={() => setEditingContact(true)}>
+              İletişimi düzenle
+            </button>
+          ) : null}
         </div>
+        {editingContact ? (
+          <form className="note-form" onSubmit={handleSaveContact}>
+            <div className="form-group">
+              <label>Telefon</label>
+              <input
+                type="tel"
+                value={contactForm.phone}
+                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Acil kişi</label>
+              <input
+                type="text"
+                value={contactForm.emergencyName}
+                onChange={(e) => setContactForm({ ...contactForm, emergencyName: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Acil kişi telefonu</label>
+              <input
+                type="tel"
+                value={contactForm.emergencyPhone}
+                onChange={(e) => setContactForm({ ...contactForm, emergencyPhone: e.target.value })}
+              />
+            </div>
+            <div className="form-actions-inline">
+              <button type="submit" className="submit-button" disabled={savingContact}>
+                {savingContact ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => {
+                  setEditingContact(false);
+                  setContactForm({
+                    phone: client.phone || '',
+                    emergencyName: client.emergencyName || '',
+                    emergencyPhone: client.emergencyPhone || '',
+                  });
+                }}
+              >
+                Vazgeç
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="info-grid">
+            <div className="info-item">
+              <span className="info-label">E-posta:</span>
+              <span className="info-value">{client.email}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Telefon:</span>
+              <span className="info-value">
+                {client.phone ? (
+                  <a href={`tel:${client.phone}`}>{client.phone}</a>
+                ) : (
+                  '-'
+                )}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Acil kişi:</span>
+              <span className="info-value">{client.emergencyName || '-'}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Acil telefon:</span>
+              <span className="info-value">
+                {client.emergencyPhone ? (
+                  <a href={`tel:${client.emergencyPhone}`}>{client.emergencyPhone}</a>
+                ) : (
+                  '-'
+                )}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Doğum Tarihi:</span>
+              <span className="info-value">{formatDate(client.birthDate)}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Anlaşılan Ücret:</span>
+              <span className="info-value">
+                {client.agreedFee != null ? `${client.agreedFee.toLocaleString('tr-TR')} ₺` : '-'}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Kayıt Tarihi:</span>
+              <span className="info-value">{formatDate(client.createdAt)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="appointments-section">
@@ -349,6 +466,9 @@ export const ClientDetail = () => {
                       <span className="appointment-time">{apt.appointmentTime}</span>
                     )}
                     {apt.title && <span className="appointment-title">— {apt.title}</span>}
+                    <span className={`appointment-status-badge status-${appointmentStatus(apt.status)}`}>
+                      {appointmentStatusLabel(apt.status)}
+                    </span>
                     <span className={`appointment-paid-badge ${(apt.isPaid ?? 0) ? 'paid' : 'unpaid'}`}>
                       {(apt.isPaid ?? 0) ? 'Ödeme Yapıldı' : 'Ödeme Bekliyor'}
                     </span>
@@ -366,9 +486,9 @@ export const ClientDetail = () => {
                       type="button"
                       className="delete-apt-button"
                       onClick={(e) => handleDeleteAppointment(apt.id, e)}
-                      title="Sil"
+                      title="İptal et"
                     >
-                      Sil
+                      İptal et
                     </button>
                     <span className="expand-icon">{expandedAppointments.has(apt.id) ? '▼' : '▶'}</span>
                   </div>
@@ -415,6 +535,24 @@ export const ClientDetail = () => {
                             placeholder="Örn: İlk görüşme"
                           />
                         </div>
+                        <div className="form-group">
+                          <label>Durum</label>
+                          <select
+                            value={appointmentForm.status}
+                            onChange={(e) =>
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                status: appointmentStatus(e.target.value),
+                              })
+                            }
+                          >
+                            {APPOINTMENT_STATUSES.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="form-group form-group-toggle">
                           <label>Ödeme Yapıldı mı?</label>
                           <label className="toggle-switch">
@@ -442,6 +580,7 @@ export const ClientDetail = () => {
                                 appointmentTime: '09:00',
                                 title: '',
                                 isPaid: false,
+                                status: 'scheduled',
                               });
                             }}
                           >

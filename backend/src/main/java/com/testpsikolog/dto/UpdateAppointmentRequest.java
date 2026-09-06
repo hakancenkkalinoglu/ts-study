@@ -4,6 +4,7 @@ public record UpdateAppointmentRequest(
         String appointmentDate,
         String appointmentTime,
         String title,
-        Boolean isPaid
+        Boolean isPaid,
+        String status
 ) {
 }

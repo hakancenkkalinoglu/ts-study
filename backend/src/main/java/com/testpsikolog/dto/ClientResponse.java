@@ -6,6 +6,9 @@ public record ClientResponse(
         String name,
         String birthDate,
         Integer agreedFee,
+        String phone,
+        String emergencyName,
+        String emergencyPhone,
         String createdAt,
         String updatedAt
 ) {
