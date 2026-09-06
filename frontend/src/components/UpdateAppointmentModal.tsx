@@ -5,8 +5,10 @@ import {
   getGoogleAuthUrl,
   getGoogleAuthStatus,
   createMeetForAppointment,
+  getClinicRooms,
+  apiErrorMessage,
 } from '../services/api';
-import type { AppointmentStatus, AppointmentWithClient } from '../types';
+import type { AppointmentStatus, AppointmentWithClient, ClinicRoom } from '../types';
 import { APPOINTMENT_STATUSES, appointmentStatus } from '../types';
 import './AddClientModal.css';
 
@@ -35,6 +37,7 @@ export const UpdateAppointmentModal = ({
       title: apt.title || '',
       isPaid: !!(apt.isPaid ?? 0),
       status: appointmentStatus(apt.status),
+      roomId: apt.roomId || 0,
     };
   };
 
@@ -44,7 +47,9 @@ export const UpdateAppointmentModal = ({
     title: '',
     isPaid: false,
     status: 'scheduled' as AppointmentStatus,
+    roomId: 0,
   });
+  const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +74,9 @@ export const UpdateAppointmentModal = ({
     getGoogleAuthStatus()
       .then(({ connected }) => setGoogleConnected(connected))
       .catch(() => setGoogleConnected(false));
+    getClinicRooms()
+      .then(setRooms)
+      .catch(() => setRooms([]));
   }, [isOpen]);
 
   useEffect(() => {
@@ -111,11 +119,12 @@ export const UpdateAppointmentModal = ({
         title: formData.title || undefined,
         isPaid: formData.isPaid,
         status: formData.status,
+        roomId: formData.roomId,
       });
       onSuccess();
       onClose();
     } catch (err) {
-      setError('Randevu güncellenirken bir hata oluştu.');
+      setError(apiErrorMessage(err, 'Randevu güncellenirken bir hata oluştu.'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -233,6 +242,23 @@ export const UpdateAppointmentModal = ({
               }
             />
           </div>
+          {rooms.length > 0 ? (
+            <div className="form-group">
+              <label htmlFor="updateRoomId">Oda</label>
+              <select
+                id="updateRoomId"
+                value={currentFormData.roomId}
+                onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
+              >
+                <option value={0}>Seçilmedi</option>
+                {rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="form-group">
             <label htmlFor="appointmentStatus">Durum</label>
             <select

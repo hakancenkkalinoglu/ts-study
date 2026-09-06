@@ -5,6 +5,7 @@ public record CreateAppointmentRequest(
         String appointmentTime,
         String title,
         Boolean isPaid,
-        String status
+        String status,
+        Long roomId
 ) {
 }

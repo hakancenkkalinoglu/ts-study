@@ -67,6 +67,46 @@ public class SchemaMigrator implements ApplicationRunner {
         if (!hasColumn("clients", "emergencyPhone")) {
             jdbc.execute("ALTER TABLE clients ADD COLUMN emergencyPhone TEXT");
         }
+
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinics (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT NOT NULL,
+                  inviteCode TEXT NOT NULL UNIQUE,
+                  ownerUserId INTEGER NOT NULL,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinic_members (
+                  clinicId INTEGER NOT NULL,
+                  userId INTEGER NOT NULL,
+                  role TEXT NOT NULL,
+                  createdAt TEXT NOT NULL,
+                  PRIMARY KEY (clinicId, userId)
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinic_rooms (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  clinicId INTEGER NOT NULL,
+                  name TEXT NOT NULL,
+                  color TEXT,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        if (!hasColumn("appointments", "clinicId")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN clinicId INTEGER");
+        }
+        if (!hasColumn("appointments", "roomId")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN roomId INTEGER");
+        }
     }
 
     private boolean hasColumn(String table, String column) {

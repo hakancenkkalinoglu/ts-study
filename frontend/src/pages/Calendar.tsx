@@ -16,12 +16,13 @@ import {
   isSameDay,
 } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { getAllAppointments } from '../services/api';
-import type { AppointmentWithClient } from '../types';
+import { getAllAppointments, getMyClinic } from '../services/api';
+import type { AppointmentWithClient, Clinic } from '../types';
 import { AddAppointmentModal } from '../components/AddAppointmentModal';
 import { UpdateAppointmentModal } from '../components/UpdateAppointmentModal';
-import { appointmentStatus } from '../types';
+import { appointmentStatus, therapistColor } from '../types';
 import './Calendar.css';
+import '../components/AddClientModal.css';
 
 type ViewMode = 'day' | 'week' | 'month';
 
@@ -34,18 +35,27 @@ export const Calendar = () => {
   const [addModalDate, setAddModalDate] = useState<string | undefined>();
   const [updateModalAppointment, setUpdateModalAppointment] =
     useState<AppointmentWithClient | null>(null);
+  const [peekAppointment, setPeekAppointment] = useState<AppointmentWithClient | null>(null);
+  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const [calendarScope, setCalendarScope] = useState<'mine' | 'clinic'>('mine');
+  const [roomFilter, setRoomFilter] = useState<number | 0>(0);
 
   const loadAppointments = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getAllAppointments();
+      const data = await getAllAppointments(calendarScope);
       setAppointments(data);
     } catch (error) {
       console.error('Error loading appointments:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+    try {
+      setClinic(await getMyClinic());
+    } catch (error) {
+      console.error('Error loading clinic:', error);
+    }
+  }, [calendarScope]);
 
   useEffect(() => {
     loadAppointments();
@@ -87,7 +97,10 @@ export const Calendar = () => {
         : apt.appointmentDate;
       return aptDate === dayStr;
     });
-    return [...apts].sort((a, b) => {
+    const filtered = roomFilter
+      ? apts.filter((apt) => apt.roomId === roomFilter)
+      : apts;
+    return [...filtered].sort((a, b) => {
       const timeA = a.appointmentTime || '00:00';
       const timeB = b.appointmentTime || '00:00';
       return timeA.localeCompare(timeB);
@@ -103,7 +116,16 @@ export const Calendar = () => {
 
   const openUpdateModal = (apt: AppointmentWithClient, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (apt.mine === false) {
+      setPeekAppointment(apt);
+      return;
+    }
     setUpdateModalAppointment(apt);
+  };
+
+  const cardStyle = (apt: AppointmentWithClient) => {
+    const color = therapistColor(apt.therapistUserId) || apt.roomColor;
+    return color ? { background: color } : undefined;
   };
 
   const getTitle = () => {
@@ -139,12 +161,17 @@ export const Calendar = () => {
             apts.map((apt) => (
               <div
                 key={apt.id}
-                className={`calendar-apt-card status-${appointmentStatus(apt.status)}`}
+                className={`calendar-apt-card status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
+                style={cardStyle(apt)}
                 onClick={(e) => openUpdateModal(apt, e)}
               >
                 <div className="apt-time">{formatTime(apt.appointmentTime)}</div>
                 <div className="apt-title">{apt.title || 'Randevu'}</div>
                 <div className="apt-client">{apt.clientName || 'Danışan'}</div>
+                {apt.roomName ? <div className="apt-room">{apt.roomName}</div> : null}
+                {calendarScope === 'clinic' && apt.therapistName ? (
+                  <div className="apt-therapist">{apt.therapistName}</div>
+                ) : null}
                 {apt.googleMeetLink && (
                   <a
                     href={apt.googleMeetLink}
@@ -191,7 +218,8 @@ export const Calendar = () => {
                 {apts.map((apt) => (
                   <div
                     key={apt.id}
-                    className={`calendar-apt-card small status-${appointmentStatus(apt.status)}`}
+                    className={`calendar-apt-card small status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
+                    style={cardStyle(apt)}
                     onClick={(e) => openUpdateModal(apt, e)}
                   >
                     <span className="apt-time-sm">{formatTime(apt.appointmentTime)}</span>
@@ -245,9 +273,10 @@ export const Calendar = () => {
                   {apts.slice(0, 3).map((apt) => (
                     <div
                       key={apt.id}
-                      className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)}`}
+                      className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
+                      style={cardStyle(apt)}
                       onClick={(e) => openUpdateModal(apt, e)}
-                      title={`${formatTime(apt.appointmentTime)} - ${apt.clientName || 'Danışan'}${apt.title ? ` - ${apt.title}` : ''}`}
+                      title={`${formatTime(apt.appointmentTime)} - ${apt.clientName || 'Danışan'}${apt.roomName ? ` · ${apt.roomName}` : ''}${apt.title ? ` - ${apt.title}` : ''}`}
                     >
                       <span className="apt-time-tiny">{formatTime(apt.appointmentTime)}</span>
                       {apt.clientName || 'Randevu'}
@@ -287,6 +316,36 @@ export const Calendar = () => {
         >
           + Randevu Ekle
         </button>
+        {clinic ? (
+          <div className="calendar-view-switcher">
+            <button
+              type="button"
+              className={`view-btn ${calendarScope === 'mine' ? 'active' : ''}`}
+              onClick={() => setCalendarScope('mine')}
+            >
+              Ben
+            </button>
+            <button
+              type="button"
+              className={`view-btn ${calendarScope === 'clinic' ? 'active' : ''}`}
+              onClick={() => setCalendarScope('clinic')}
+            >
+              Tüm klinik
+            </button>
+            <select
+              className="calendar-room-filter"
+              value={roomFilter}
+              onChange={(e) => setRoomFilter(Number(e.target.value))}
+            >
+              <option value={0}>Tüm odalar</option>
+              {clinic.rooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="calendar-view-switcher">
           <button
             type="button"
@@ -340,6 +399,24 @@ export const Calendar = () => {
         onSuccess={loadAppointments}
         appointment={updateModalAppointment}
       />
+      {peekAppointment ? (
+        <div className="modal-overlay" onClick={() => setPeekAppointment(null)}>
+          <div className="modal-content calendar-peek" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Klinik seansı</h2>
+              <button type="button" className="close-button" onClick={() => setPeekAppointment(null)}>
+                ×
+              </button>
+            </div>
+            <p>
+              {formatTime(peekAppointment.appointmentTime)} · {peekAppointment.clientName || 'Seans'}
+            </p>
+            {peekAppointment.roomName ? <p>Oda: {peekAppointment.roomName}</p> : null}
+            {peekAppointment.therapistName ? <p>Terapist: {peekAppointment.therapistName}</p> : null}
+            <p className="calendar-peek-hint">Bu seans bir meslektaşa ait. Notlar ve düzenleme kapalı.</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

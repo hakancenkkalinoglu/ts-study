@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
-import { createAppointment, getAppointmentById, getClients } from '../services/api';
-import type { Client, AppointmentWithClient } from '../types';
+import { apiErrorMessage, createAppointment, getAppointmentById, getClients, getClinicRooms } from '../services/api';
+import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
 import './AddClientModal.css';
 import './AddAppointmentModal.css';
 
@@ -37,7 +37,9 @@ export const AddAppointmentModal = ({
     appointmentDate: initialDate || new Date().toISOString().split('T')[0],
     appointmentTime: '09:00',
     title: '',
+    roomId: 0,
   });
+  const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,9 @@ export const AddAppointmentModal = ({
       setSearchTerm('');
       setDropdownOpen(false);
       setClients([]);
+      getClinicRooms()
+        .then(setRooms)
+        .catch(() => setRooms([]));
     }
   }, [isOpen]);
 
@@ -124,6 +129,7 @@ export const AddAppointmentModal = ({
         appointmentDate: formData.appointmentDate,
         appointmentTime: formData.appointmentTime,
         title: formData.title || undefined,
+        roomId: formData.roomId || undefined,
       });
       const createdAppointment = await getAppointmentById(result.id);
       setFormData({
@@ -132,11 +138,12 @@ export const AddAppointmentModal = ({
         appointmentDate: new Date().toISOString().split('T')[0],
         appointmentTime: '09:00',
         title: '',
+        roomId: 0,
       });
       setSearchTerm('');
       onSuccess(createdAppointment);
     } catch (err) {
-      setError('Randevu eklenirken bir hata oluştu.');
+      setError(apiErrorMessage(err, 'Randevu eklenirken bir hata oluştu.'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -238,6 +245,23 @@ export const AddAppointmentModal = ({
               }
             />
           </div>
+          {rooms.length > 0 ? (
+            <div className="form-group">
+              <label htmlFor="roomId">Oda</label>
+              <select
+                id="roomId"
+                value={formData.roomId}
+                onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
+              >
+                <option value={0}>Seçilmedi</option>
+                {rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="form-group">
             <label htmlFor="title">Başlık</label>
             <input

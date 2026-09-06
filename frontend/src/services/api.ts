@@ -1,5 +1,17 @@
 import axios from 'axios';
-import type { Client, CreateClientInput, Note, CreateNoteInput, Appointment, CreateAppointmentInput, UpdateAppointmentInput, AppointmentWithClient } from '../types';
+import type {
+  Client,
+  CreateClientInput,
+  Note,
+  CreateNoteInput,
+  Appointment,
+  CreateAppointmentInput,
+  UpdateAppointmentInput,
+  AppointmentWithClient,
+  Clinic,
+  ClinicRoom,
+  UpdateNoteInput,
+} from '../types';
 
 // Relative URL: Vite proxy forwards /api to backend (localhost:3000)
 const API_BASE_URL = '/api';
@@ -103,6 +115,20 @@ export const createAppointmentNote = async (
   return response.data;
 };
 
+export const updateNote = async (
+  clientId: number,
+  noteId: number,
+  data: UpdateNoteInput
+): Promise<{ updated: number }> => {
+  const response = await api.put<{ updated: number }>(`/clients/${clientId}/notes/${noteId}`, data);
+  return response.data;
+};
+
+export const deleteNote = async (clientId: number, noteId: number): Promise<{ deleted: number }> => {
+  const response = await api.delete<{ deleted: number }>(`/clients/${clientId}/notes/${noteId}`);
+  return response.data;
+};
+
 // Appointment endpoints
 export const getAppointments = async (clientId: number): Promise<Appointment[]> => {
   const response = await api.get<Appointment[]>(`/clients/${clientId}/appointments`);
@@ -152,9 +178,63 @@ export const getAppointmentNotes = async (
   return response.data;
 };
 
-export const getAllAppointments = async (): Promise<AppointmentWithClient[]> => {
-  const response = await api.get<AppointmentWithClient[]>('/appointments');
+export const getAllAppointments = async (scope?: 'mine' | 'clinic'): Promise<AppointmentWithClient[]> => {
+  const params = scope ? { scope } : {};
+  const response = await api.get<AppointmentWithClient[]>('/appointments', { params });
   return response.data;
+};
+
+export const getMyClinic = async (): Promise<Clinic | null> => {
+  const response = await api.get<{ clinic: Clinic | null }>('/clinic');
+  return response.data.clinic;
+};
+
+export const createClinic = async (name: string): Promise<Clinic> => {
+  const response = await api.post<Clinic>('/clinic', { name });
+  return response.data;
+};
+
+export const joinClinic = async (inviteCode: string): Promise<Clinic> => {
+  const response = await api.post<Clinic>('/clinic/join', { inviteCode });
+  return response.data;
+};
+
+export const leaveClinic = async (): Promise<void> => {
+  await api.post('/clinic/leave');
+};
+
+export const deleteClinic = async (): Promise<void> => {
+  await api.delete('/clinic');
+};
+
+export const getClinicRooms = async (): Promise<ClinicRoom[]> => {
+  const response = await api.get<ClinicRoom[]>('/clinic/rooms');
+  return response.data;
+};
+
+export const createClinicRoom = async (name: string, color?: string): Promise<ClinicRoom> => {
+  const response = await api.post<ClinicRoom>('/clinic/rooms', { name, color });
+  return response.data;
+};
+
+export const updateClinicRoom = async (
+  roomId: number,
+  data: { name?: string; color?: string }
+): Promise<ClinicRoom> => {
+  const response = await api.put<ClinicRoom>(`/clinic/rooms/${roomId}`, data);
+  return response.data;
+};
+
+export const deleteClinicRoom = async (roomId: number): Promise<void> => {
+  await api.delete(`/clinic/rooms/${roomId}`);
+};
+
+export const apiErrorMessage = (error: unknown, fallback: string): string => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
+    if (message) return message;
+  }
+  return fallback;
 };
 
 export const getAppointmentById = async (id: number): Promise<AppointmentWithClient> => {

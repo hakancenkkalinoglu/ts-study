@@ -56,6 +56,13 @@ export type Appointment = {
   googleHtmlLink?: string | null;
   createdAt: string;
   updatedAt: string;
+  clinicId?: number | null;
+  roomId?: number | null;
+  roomName?: string | null;
+  roomColor?: string | null;
+  therapistUserId?: number | null;
+  therapistName?: string | null;
+  mine?: boolean;
 };
 
 export type AppointmentWithClient = Appointment & {
@@ -70,6 +77,7 @@ export type CreateAppointmentInput = {
   appointmentTime?: string;
   title?: string;
   isPaid?: boolean;
+  roomId?: number;
 };
 
 export type UpdateAppointmentInput = {
@@ -78,6 +86,36 @@ export type UpdateAppointmentInput = {
   title?: string;
   isPaid?: boolean;
   status?: AppointmentStatus;
+  roomId?: number;
+};
+
+export type ClinicMember = {
+  userId: number;
+  name: string;
+  role: string;
+};
+
+export type ClinicRoom = {
+  id: number;
+  name: string;
+  color: string | null;
+};
+
+export type Clinic = {
+  id: number;
+  name: string;
+  inviteCode: string;
+  ownerUserId: number;
+  role: string;
+  members: ClinicMember[];
+  rooms: ClinicRoom[];
+};
+
+export const THERAPIST_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+
+export const therapistColor = (userId?: number | null): string | undefined => {
+  if (userId == null) return undefined;
+  return THERAPIST_COLORS[Math.abs(userId) % THERAPIST_COLORS.length];
 };
 
 export type Note = {
@@ -97,4 +135,10 @@ export type CreateNoteInput = {
   title?: string;
   content: string;
   noteDate: string;
+};
+
+export type UpdateNoteInput = {
+  title?: string;
+  content?: string;
+  noteDate?: string;
 };

@@ -7,10 +7,14 @@ import {
   getAppointmentNotes,
   createAppointment,
   createAppointmentNote,
+  updateNote,
+  deleteNote,
   updateAppointment,
   updateClient,
+  getClinicRooms,
+  apiErrorMessage,
 } from '../services/api';
-import type { Appointment, AppointmentStatus, Client, Note } from '../types';
+import type { Appointment, AppointmentStatus, Client, ClinicRoom, Note } from '../types';
 import { APPOINTMENT_STATUSES, appointmentStatus, appointmentStatusLabel } from '../types';
 import './ClientDetail.css';
 
@@ -42,12 +46,15 @@ export const ClientDetail = () => {
     title: '',
     isPaid: false,
     status: 'scheduled' as AppointmentStatus,
+    roomId: 0,
   });
+  const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [noteForm, setNoteForm] = useState({
     title: '',
     content: '',
     noteDate: new Date().toISOString().split('T')[0],
   });
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
 
   const loadClientData = useCallback(async () => {
     if (!id) return;
@@ -89,6 +96,12 @@ export const ClientDetail = () => {
     if (id) loadClientData();
   }, [id, loadClientData]);
 
+  useEffect(() => {
+    getClinicRooms()
+      .then(setRooms)
+      .catch(() => setRooms([]));
+  }, []);
+
   const handleAddAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client) return;
@@ -101,6 +114,7 @@ export const ClientDetail = () => {
         appointmentTime: appointmentForm.appointmentTime,
         title: appointmentForm.title || undefined,
         isPaid: appointmentForm.isPaid,
+        roomId: appointmentForm.roomId || undefined,
       });
       setAppointmentForm({
         appointmentDate: new Date().toISOString().split('T')[0],
@@ -108,15 +122,13 @@ export const ClientDetail = () => {
         title: '',
         isPaid: false,
         status: 'scheduled',
+        roomId: 0,
       });
       setShowAppointmentForm(false);
       loadClientData();
     } catch (error: unknown) {
       console.error('Error adding appointment:', error);
-      const message = error && typeof error === 'object' && 'response' in error
-        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-        : null;
-      alert(message || 'Randevu eklenirken bir hata oluştu.');
+      alert(apiErrorMessage(error, 'Randevu eklenirken bir hata oluştu.'));
     } finally {
       setSubmitting(false);
     }
@@ -135,6 +147,7 @@ export const ClientDetail = () => {
         title: appointmentForm.title || undefined,
         isPaid: appointmentForm.isPaid,
         status: appointmentForm.status,
+        roomId: appointmentForm.roomId,
       });
       setEditingAppointmentId(null);
       setAppointmentForm({
@@ -143,6 +156,7 @@ export const ClientDetail = () => {
         title: '',
         isPaid: false,
         status: 'scheduled',
+        roomId: 0,
       });
       loadClientData();
     } catch (error: unknown) {
@@ -182,6 +196,7 @@ export const ClientDetail = () => {
       title: apt.title || '',
       isPaid: !!(apt.isPaid ?? 0),
       status: appointmentStatus(apt.status),
+      roomId: apt.roomId || 0,
     });
   };
 
@@ -196,14 +211,66 @@ export const ClientDetail = () => {
         content: noteForm.content,
         noteDate: noteForm.noteDate,
       });
-      setNoteForm({ title: '', content: '', noteDate: new Date().toISOString().split('T')[0] });
-      setShowNoteFormFor(null);
+      resetNoteForm();
       loadClientData();
     } catch (error) {
       console.error('Error adding note:', error);
       alert('Not eklenirken bir hata oluştu.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const resetNoteForm = () => {
+    setNoteForm({ title: '', content: '', noteDate: new Date().toISOString().split('T')[0] });
+    setEditingNoteId(null);
+    setShowNoteFormFor(null);
+  };
+
+  const startEditNote = (note: Note) => {
+    const dateStr = note.noteDate.includes('T') ? note.noteDate.split('T')[0] : note.noteDate.slice(0, 10);
+    setEditingNoteId(note.id);
+    setShowNoteFormFor(null);
+    setNoteForm({
+      title: note.title || '',
+      content: note.content,
+      noteDate: dateStr,
+    });
+  };
+
+  const handleUpdateNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!client || editingNoteId == null || !noteForm.content.trim()) return;
+    try {
+      setSubmitting(true);
+      await updateNote(client.id, editingNoteId, {
+        title: noteForm.title,
+        content: noteForm.content.trim(),
+        noteDate: noteForm.noteDate,
+      });
+      resetNoteForm();
+      loadClientData();
+    } catch (error) {
+      console.error('Error updating note:', error);
+      alert(apiErrorMessage(error, 'Not güncellenemedi.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: number) => {
+    if (!client) return;
+    if (!window.confirm('Bu not silinsin mi? Bu işlem geri alınamaz.')) return;
+    try {
+      await deleteNote(client.id, noteId);
+      if (editingNoteId === noteId) {
+        resetNoteForm();
+      }
+      loadClientData();
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      alert(apiErrorMessage(error, 'Not silinemedi.'));
     }
   };
 
@@ -243,6 +310,69 @@ export const ClientDetail = () => {
       month: 'long',
       day: 'numeric',
     });
+  };
+
+  const renderNoteCard = (note: Note) => {
+    if (editingNoteId === note.id) {
+      return (
+        <form key={note.id} className="note-form" onSubmit={handleUpdateNote}>
+          <div className="form-group">
+            <label>Başlık (opsiyonel)</label>
+            <input
+              type="text"
+              value={noteForm.title}
+              onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>İçerik *</label>
+            <textarea
+              value={noteForm.content}
+              onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
+              rows={4}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Tarih</label>
+            <input
+              type="date"
+              value={noteForm.noteDate}
+              onChange={(e) => setNoteForm({ ...noteForm, noteDate: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-actions-inline">
+            <button type="submit" className="submit-button" disabled={submitting}>
+              {submitting ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+            <button type="button" className="cancel-button" onClick={resetNoteForm}>
+              Vazgeç
+            </button>
+          </div>
+        </form>
+      );
+    }
+    return (
+      <div key={note.id} className="note-card">
+        <div className="note-header">
+          <h3>{note.title || 'Başlıksız Not'}</h3>
+          <span className="note-date">{formatDate(note.noteDate)}</span>
+        </div>
+        <p className="note-content">{note.content}</p>
+        <div className="note-footer note-footer-actions">
+          <span className="note-created">Oluşturulma: {formatDate(note.createdAt)}</span>
+          <div className="note-actions">
+            <button type="button" className="edit-apt-button" onClick={() => startEditNote(note)}>
+              Düzenle
+            </button>
+            <button type="button" className="delete-apt-button" onClick={() => handleDeleteNote(note.id)}>
+              Sil
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -419,6 +549,24 @@ export const ClientDetail = () => {
                 required
               />
             </div>
+            {rooms.length > 0 ? (
+              <div className="form-group">
+                <label>Oda</label>
+                <select
+                  value={appointmentForm.roomId}
+                  onChange={(e) =>
+                    setAppointmentForm({ ...appointmentForm, roomId: Number(e.target.value) })
+                  }
+                >
+                  <option value={0}>Seçilmedi</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="form-group">
               <label>Başlık (opsiyonel)</label>
               <input
@@ -466,6 +614,7 @@ export const ClientDetail = () => {
                       <span className="appointment-time">{apt.appointmentTime}</span>
                     )}
                     {apt.title && <span className="appointment-title">— {apt.title}</span>}
+                    {apt.roomName ? <span className="appointment-title">· {apt.roomName}</span> : null}
                     <span className={`appointment-status-badge status-${appointmentStatus(apt.status)}`}>
                       {appointmentStatusLabel(apt.status)}
                     </span>
@@ -524,6 +673,27 @@ export const ClientDetail = () => {
                             required
                           />
                         </div>
+                        {rooms.length > 0 ? (
+                          <div className="form-group">
+                            <label>Oda</label>
+                            <select
+                              value={appointmentForm.roomId}
+                              onChange={(e) =>
+                                setAppointmentForm({
+                                  ...appointmentForm,
+                                  roomId: Number(e.target.value),
+                                })
+                              }
+                            >
+                              <option value={0}>Seçilmedi</option>
+                              {rooms.map((room) => (
+                                <option key={room.id} value={room.id}>
+                                  {room.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
                         <div className="form-group">
                           <label>Başlık (opsiyonel)</label>
                           <input
@@ -656,15 +826,7 @@ export const ClientDetail = () => {
                       </p>
                     ) : (
                       <div className="notes-list">
-                        {(notesByAppointment[apt.id] || []).map((note) => (
-                          <div key={note.id} className="note-card">
-                            <div className="note-header">
-                              <h3>{note.title || 'Başlıksız Not'}</h3>
-                              <span className="note-date">{formatDate(note.noteDate)}</span>
-                            </div>
-                            <p className="note-content">{note.content}</p>
-                          </div>
-                        ))}
+                        {(notesByAppointment[apt.id] || []).map((note) => renderNoteCard(note))}
                       </div>
                     )}
                       </>
@@ -694,20 +856,7 @@ export const ClientDetail = () => {
                 <p className="empty-notes">Henüz not eklenmemiş.</p>
               ) : (
                 <div className="notes-list">
-                  {allNotes.map((note) => (
-                    <div key={note.id} className="note-card">
-                      <div className="note-header">
-                        <h3>{note.title || 'Başlıksız Not'}</h3>
-                        <span className="note-date">{formatDate(note.noteDate)}</span>
-                      </div>
-                      <p className="note-content">{note.content}</p>
-                      <div className="note-footer">
-                        <span className="note-created">
-                          Oluşturulma: {formatDate(note.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                  {allNotes.map((note) => renderNoteCard(note))}
                 </div>
               )}
             </div>

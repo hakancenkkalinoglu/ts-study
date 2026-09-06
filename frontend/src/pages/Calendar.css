@@ -303,6 +303,35 @@
   filter: brightness(1.1);
 }
 
+.calendar-apt-card.not-mine {
+  outline: 1px dashed rgba(255, 255, 255, 0.5);
+}
+
+.apt-room,
+.apt-therapist {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.calendar-room-filter {
+  margin-left: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.calendar-peek {
+  padding: 0 24px 24px;
+  color: var(--text-primary);
+}
+
+.calendar-peek-hint {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
 .calendar-apt-card.small {
   padding: 6px 10px;
 }

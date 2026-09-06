@@ -47,6 +47,12 @@ export const MainNav = ({ onLogout }: MainNavProps) => {
         >
           Raporlar
         </NavLink>
+        <NavLink
+          to="/klinik"
+          className={({ isActive }) => `nav-tab ${isActive ? 'nav-tab-active' : ''}`}
+        >
+          Klinik
+        </NavLink>
       </div>
       <div className="main-nav-actions">
         <ThemeToggle />

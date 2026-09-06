@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -54,9 +55,9 @@ public class AppointmentController {
     }
 
     @GetMapping("/appointments")
-    public List<AppointmentResponse> getAllAppointments() {
+    public List<AppointmentResponse> getAllAppointments(@RequestParam(value = "scope", required = false) String scope) {
         long userId = currentUserService.requireUser().id();
-        return appointmentService.getAll(userId);
+        return appointmentService.getAll(userId, scope);
     }
 
     @GetMapping("/appointments/{id}")

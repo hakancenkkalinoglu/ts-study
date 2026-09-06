@@ -9,6 +9,7 @@ import { ClientDetail } from './pages/ClientDetail';
 import { Calendar } from './pages/Calendar';
 import { Payments } from './pages/Payments';
 import { Reports } from './pages/Reports';
+import { ClinicPage } from './pages/Clinic';
 import { getStoredToken, setStoredToken } from './services/api';
 import './App.css';
 
@@ -49,6 +50,7 @@ function App() {
             <Route path="/takvim" element={<Calendar />} />
             <Route path="/odemeler" element={<Payments />} />
             <Route path="/raporlar" element={<Reports />} />
+            <Route path="/klinik" element={<ClinicPage />} />
             <Route path="/client/:id" element={<ClientDetail />} />
           </Routes>
         </div>

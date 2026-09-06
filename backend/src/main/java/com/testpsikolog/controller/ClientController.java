@@ -7,6 +7,7 @@ import com.testpsikolog.dto.DeletedResponse;
 import com.testpsikolog.dto.IdResponse;
 import com.testpsikolog.dto.NoteResponse;
 import com.testpsikolog.dto.UpdateClientRequest;
+import com.testpsikolog.dto.UpdateNoteRequest;
 import com.testpsikolog.dto.UpdatedResponse;
 import com.testpsikolog.service.ClientService;
 import com.testpsikolog.service.CurrentUserService;
@@ -94,5 +95,29 @@ public class ClientController {
                 body.noteDate()
         );
         return new IdResponse(noteService.create(userId, merged));
+    }
+
+    @PutMapping("/clients/{clientId}/notes/{noteId}")
+    public UpdatedResponse updateClientNote(
+            @PathVariable long clientId,
+            @PathVariable long noteId,
+            @RequestBody UpdateNoteRequest body
+    ) {
+        long userId = currentUserService.requireUser().id();
+        int updated = noteService.update(userId, clientId, noteId, body);
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not bulunamadı.");
+        }
+        return new UpdatedResponse(updated);
+    }
+
+    @DeleteMapping("/clients/{clientId}/notes/{noteId}")
+    public DeletedResponse deleteClientNote(@PathVariable long clientId, @PathVariable long noteId) {
+        long userId = currentUserService.requireUser().id();
+        int deleted = noteService.delete(userId, clientId, noteId);
+        if (deleted == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not bulunamadı.");
+        }
+        return new DeletedResponse(deleted);
     }
 }

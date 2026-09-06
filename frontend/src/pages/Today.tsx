@@ -124,6 +124,7 @@ export const Today = () => {
                       <span className="today-main">
                         <span className="today-name">{apt.clientName || 'İsimsiz'}</span>
                         {apt.title ? <span className="today-apt-title">{apt.title}</span> : null}
+                        {apt.roomName ? <span className="today-apt-title">{apt.roomName}</span> : null}
                       </span>
                       <span className={`today-badge status-${appointmentStatus(apt.status)}`}>
                         {appointmentStatusLabel(apt.status)}
