@@ -4,5 +4,9 @@ target/
 .env
 # Google OAuth tokens (user-specific)
 data/google-tokens.json
+data/*.sqlite
+data/*.sqlite-journal
+data/*.sqlite-wal
+data/*.sqlite-shm
 
 notes.txt
