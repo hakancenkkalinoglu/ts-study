@@ -38,6 +38,8 @@ export const appointmentStatus = (value?: string | null): AppointmentStatus => {
   return 'scheduled';
 };
 
+export const appointmentPaid = (value?: number | boolean | null) => value === true || value === 1;
+
 export const appointmentStatusLabel = (value?: string | null): string => {
   const status = appointmentStatus(value);
   return APPOINTMENT_STATUSES.find((item) => item.value === status)?.label ?? 'Planlandı';

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
-import { appointmentStatus, appointmentStatusLabel } from '../types';
+import { appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -14,6 +14,8 @@ type ClientSessionRow = {
   sessions: number;
   attended: number;
   noShow: number;
+  paid: number;
+  pendingAmount: number;
 };
 
 type ClientDebtRow = {
@@ -23,11 +25,8 @@ type ClientDebtRow = {
   pendingAmount: number;
 };
 
-const formatMoney = (amount: number) => {
-  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(1)}M ₺`;
-  if (amount >= 1_000) return `${(amount / 1_000).toFixed(1)}K ₺`;
-  return `${amount} ₺`;
-};
+const formatMoney = (amount: number) =>
+  `${amount.toLocaleString('tr-TR')} ₺`;
 
 const MONTHS = [
   'Ocak',
@@ -72,6 +71,20 @@ export const Reports = () => {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [loadData]);
 
   const yearsFromData = appointments.map((a) => parseAptDate(a.appointmentDate).getFullYear());
@@ -146,21 +159,38 @@ export const Reports = () => {
 
   const fee = (a: AppointmentWithClient) => a.agreedFee ?? 0;
 
-  const earnedThisMonth = appointmentsThisMonth
-    .filter((a) => a.isPaid)
-    .reduce((sum, a) => sum + fee(a), 0);
+  const paidThisMonth = appointmentsThisMonth.filter((a) => appointmentPaid(a.isPaid));
+  const pendingThisMonth = appointmentsThisMonth.filter(
+    (a) => !appointmentPaid(a.isPaid) && appointmentStatus(a.status) !== 'cancelled'
+  );
+  const paidThisYear = appointmentsThisYear.filter((a) => appointmentPaid(a.isPaid));
+  const pendingThisYear = appointmentsThisYear.filter(
+    (a) => !appointmentPaid(a.isPaid) && appointmentStatus(a.status) !== 'cancelled'
+  );
 
-  const earnedThisYear = appointmentsThisYear
-    .filter((a) => a.isPaid)
-    .reduce((sum, a) => sum + fee(a), 0);
-
-  const pendingMonth = appointmentsThisMonth
-    .filter((a) => !a.isPaid && appointmentStatus(a.status) !== 'cancelled')
-    .reduce((sum, a) => sum + fee(a), 0);
-
-  const pendingYear = appointmentsThisYear
-    .filter((a) => !a.isPaid && appointmentStatus(a.status) !== 'cancelled')
-    .reduce((sum, a) => sum + fee(a), 0);
+  const earnedThisMonth = paidThisMonth.reduce((sum, a) => sum + fee(a), 0);
+  const earnedThisYear = paidThisYear.reduce((sum, a) => sum + fee(a), 0);
+  const pendingMonth = pendingThisMonth.reduce((sum, a) => sum + fee(a), 0);
+  const pendingYear = pendingThisYear.reduce((sum, a) => sum + fee(a), 0);
+  const paymentTotal = paidThisMonth.length + pendingThisMonth.length;
+  const paymentBreakdown = [
+    {
+      key: 'paid',
+      label: 'Ödendi',
+      count: paidThisMonth.length,
+      amount: earnedThisMonth,
+      percent: paymentTotal === 0 ? 0 : Math.round((paidThisMonth.length / paymentTotal) * 100),
+      color: '#28a745',
+    },
+    {
+      key: 'pending',
+      label: 'Bekliyor',
+      count: pendingThisMonth.length,
+      amount: pendingMonth,
+      percent: paymentTotal === 0 ? 0 : Math.round((pendingThisMonth.length / paymentTotal) * 100),
+      color: '#d4a017',
+    },
+  ];
 
   const chartData = [
     { name: 'Kazanılan', value: earnedThisYear, fill: '#28a745' },
@@ -175,6 +205,8 @@ export const Reports = () => {
       existing.sessions += 1;
       if (status === 'attended') existing.attended += 1;
       if (status === 'no_show') existing.noShow += 1;
+      if (appointmentPaid(apt.isPaid)) existing.paid += 1;
+      else existing.pendingAmount += fee(apt);
     } else {
       sessionByClient.set(apt.clientId, {
         clientId: apt.clientId,
@@ -182,6 +214,8 @@ export const Reports = () => {
         sessions: 1,
         attended: status === 'attended' ? 1 : 0,
         noShow: status === 'no_show' ? 1 : 0,
+        paid: appointmentPaid(apt.isPaid) ? 1 : 0,
+        pendingAmount: appointmentPaid(apt.isPaid) ? 0 : fee(apt),
       });
     }
   }
@@ -192,7 +226,7 @@ export const Reports = () => {
 
   const debtByClient = new Map<number, ClientDebtRow>();
   for (const apt of appointments) {
-    if (apt.isPaid || appointmentStatus(apt.status) === 'cancelled') continue;
+    if (appointmentPaid(apt.isPaid) || appointmentStatus(apt.status) === 'cancelled') continue;
     const existing = debtByClient.get(apt.clientId);
     if (existing) {
       existing.pendingCount += 1;
@@ -288,13 +322,13 @@ export const Reports = () => {
         <div className="report-card">
           <h3 className="report-card-title">{selectedYear} tahsil edilen</h3>
           <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisYear)}</p>
-          <span className="report-card-meta">{selectedYear}</span>
+          <span className="report-card-meta">{paidThisYear.length} seans ödendi · {selectedYear}</span>
         </div>
 
         <div className="report-card">
           <h3 className="report-card-title">{monthLabel} tahsil edilen</h3>
           <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisMonth)}</p>
-          <span className="report-card-meta">{monthLabel}</span>
+          <span className="report-card-meta">{paidThisMonth.length} seans ödendi · {monthLabel}</span>
         </div>
 
         <div className="report-card report-card-status">
@@ -316,10 +350,30 @@ export const Reports = () => {
           <span className="report-card-meta">Yüzde tüm randevulara göre · {monthLabel}</span>
         </div>
 
+        <div className="report-card report-card-status">
+          <h3 className="report-card-title">{monthLabel} ödeme</h3>
+          {paymentTotal === 0 ? (
+            <p className="report-status-empty">Bu ayda sayılan randevu yok.</p>
+          ) : (
+            <ul className="report-status-list with-amount">
+              {paymentBreakdown.map((row) => (
+                <li key={row.key}>
+                  <span className="report-status-dot" style={{ background: row.color }} />
+                  <span className="report-status-label">{row.label}</span>
+                  <span className="report-status-count">{row.count}</span>
+                  <span className="report-status-percent">{row.percent}%</span>
+                  <span className="report-status-amount">{formatMoney(row.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <span className="report-card-meta">İptaller hariç · tik değişince burası değişir · {monthLabel}</span>
+        </div>
+
         <div className="report-card">
           <h3 className="report-card-title">{monthLabel} bekleyen</h3>
           <p className="report-card-value report-card-value-pending">{formatMoney(pendingMonth)}</p>
-          <span className="report-card-meta">{monthLabel}</span>
+          <span className="report-card-meta">{pendingThisMonth.length} seans bekliyor · {monthLabel}</span>
         </div>
         
         <div className="report-card report-card-chart">
@@ -373,6 +427,8 @@ export const Reports = () => {
                     <th>Seans</th>
                     <th>Geldi</th>
                     <th>Gelmedi</th>
+                    <th>Ödendi</th>
+                    <th>Bekleyen</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -390,6 +446,8 @@ export const Reports = () => {
                       <td>{row.sessions}</td>
                       <td>{row.attended}</td>
                       <td>{row.noShow}</td>
+                      <td>{row.paid}</td>
+                      <td>{formatMoney(row.pendingAmount)}</td>
                     </tr>
                   ))}
                 </tbody>

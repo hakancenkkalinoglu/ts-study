@@ -153,6 +153,16 @@
   text-align: right;
 }
 
+.report-status-list.with-amount li {
+  grid-template-columns: 12px 1fr auto auto auto;
+}
+
+.report-status-amount {
+  font-weight: 600;
+  min-width: 72px;
+  text-align: right;
+}
+
 .report-status-empty {
   color: var(--text-secondary);
   margin: 12px 0;

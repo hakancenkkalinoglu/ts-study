@@ -10,6 +10,7 @@ interface AddAppointmentModalProps {
   /** Called after create; if createdAppointment is passed, parent should open update modal with it. */
   onSuccess: (createdAppointment?: AppointmentWithClient | null) => void;
   initialDate?: string;
+  initialTime?: string;
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -26,6 +27,7 @@ export const AddAppointmentModal = ({
   onClose,
   onSuccess,
   initialDate,
+  initialTime,
 }: AddAppointmentModalProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
@@ -35,7 +37,7 @@ export const AddAppointmentModal = ({
     clientId: 0,
     selectedClientName: '',
     appointmentDate: initialDate || new Date().toISOString().split('T')[0],
-    appointmentTime: '09:00',
+    appointmentTime: initialTime || '09:00',
     title: '',
     roomId: 0,
   });
@@ -88,10 +90,13 @@ export const AddAppointmentModal = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (initialDate) {
-      setFormData((prev) => ({ ...prev, appointmentDate: initialDate }));
-    }
-  }, [initialDate]);
+    if (!isOpen) return;
+    setFormData((prev) => ({
+      ...prev,
+      appointmentDate: initialDate || prev.appointmentDate,
+      appointmentTime: initialTime || '09:00',
+    }));
+  }, [isOpen, initialDate, initialTime]);
 
   const handleSelectClient = (client: Client) => {
     setFormData((prev) => ({

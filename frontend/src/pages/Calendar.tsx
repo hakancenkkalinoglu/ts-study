@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   format,
   startOfWeek,
@@ -25,20 +25,136 @@ import './Calendar.css';
 import '../components/AddClientModal.css';
 
 type ViewMode = 'day' | 'week' | 'month';
+type CalendarScope = 'mine' | 'clinic';
+
+const CALENDAR_STATE_KEY = 'calendarViewState';
+
+type StoredCalendarState = {
+  viewMode: ViewMode;
+  calendarScope: CalendarScope;
+  roomFilter: number;
+  currentDate: string;
+};
+
+const parseStoredDate = (value?: string) => {
+  if (!value) return new Date();
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
+const readCalendarState = (): StoredCalendarState | null => {
+  try {
+    const raw = localStorage.getItem(CALENDAR_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredCalendarState>;
+    const viewMode =
+      parsed.viewMode === 'day' || parsed.viewMode === 'week' || parsed.viewMode === 'month'
+        ? parsed.viewMode
+        : null;
+    if (!viewMode) return null;
+    return {
+      viewMode,
+      calendarScope: parsed.calendarScope === 'clinic' ? 'clinic' : 'mine',
+      roomFilter: typeof parsed.roomFilter === 'number' ? parsed.roomFilter : 0,
+      currentDate: parsed.currentDate || format(new Date(), 'yyyy-MM-dd'),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const GRID_START_HOUR = 7;
+const GRID_END_HOUR = 23;
+const HOUR_PX = 72;
+const SLOT_MINUTES = 60;
+
+const parseTimeMinutes = (time: string | null) => {
+  const part = (time || '09:00').slice(0, 5);
+  const [hour, minute] = part.split(':').map(Number);
+  return (hour || 0) * 60 + (minute || 0);
+};
+
+const formatHourLabel = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+
+const resolveGridRange = (apts: AppointmentWithClient[]) => {
+  let startMinutes = GRID_START_HOUR * 60;
+  let endMinutes = GRID_END_HOUR * 60;
+  for (const apt of apts) {
+    const start = parseTimeMinutes(apt.appointmentTime);
+    const end = start + SLOT_MINUTES;
+    startMinutes = Math.min(startMinutes, Math.floor(start / 60) * 60);
+    endMinutes = Math.max(endMinutes, Math.ceil(end / 60) * 60);
+  }
+  return { startMinutes, endMinutes };
+};
+
+type LaidOutAppointment = {
+  apt: AppointmentWithClient;
+  start: number;
+  end: number;
+  col: number;
+  cols: number;
+};
+
+const layoutDayAppointments = (apts: AppointmentWithClient[]): LaidOutAppointment[] => {
+  const items: LaidOutAppointment[] = apts
+    .map((apt) => {
+      const start = parseTimeMinutes(apt.appointmentTime);
+      return { apt, start, end: start + SLOT_MINUTES, col: 0, cols: 1 };
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const columnEnds: number[] = [];
+  for (const item of items) {
+    let placed = false;
+    for (let index = 0; index < columnEnds.length; index += 1) {
+      if (columnEnds[index] <= item.start) {
+        item.col = index;
+        columnEnds[index] = item.end;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      item.col = columnEnds.length;
+      columnEnds.push(item.end);
+    }
+  }
+
+  for (const item of items) {
+    const overlapping = items.filter((other) => other.start < item.end && other.end > item.start);
+    item.cols = Math.max(...overlapping.map((other) => other.col), item.col) + 1;
+  }
+  return items;
+};
+
+const snapTimeFromOffset = (offsetY: number, startMinutes: number) => {
+  const raw = startMinutes + (offsetY / HOUR_PX) * 60;
+  const snapped = Math.round(raw / 30) * 30;
+  const hour = Math.min(23, Math.max(0, Math.floor(snapped / 60)));
+  const minute = snapped % 60 === 30 ? '30' : '00';
+  return `${String(hour).padStart(2, '0')}:${minute}`;
+};
 
 export const Calendar = () => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [currentDate, setCurrentDate] = useState(() => parseStoredDate(readCalendarState()?.currentDate));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => readCalendarState()?.viewMode ?? 'month');
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addModalDate, setAddModalDate] = useState<string | undefined>();
+  const [addModalTime, setAddModalTime] = useState<string | undefined>();
+  const [now, setNow] = useState(() => new Date());
+  const timeGridRef = useRef<HTMLDivElement>(null);
   const [updateModalAppointment, setUpdateModalAppointment] =
     useState<AppointmentWithClient | null>(null);
   const [peekAppointment, setPeekAppointment] = useState<AppointmentWithClient | null>(null);
   const [clinic, setClinic] = useState<Clinic | null>(null);
-  const [calendarScope, setCalendarScope] = useState<'mine' | 'clinic'>('mine');
-  const [roomFilter, setRoomFilter] = useState<number | 0>(0);
+  const [calendarScope, setCalendarScope] = useState<CalendarScope>(
+    () => readCalendarState()?.calendarScope ?? 'mine'
+  );
+  const [roomFilter, setRoomFilter] = useState<number | 0>(() => readCalendarState()?.roomFilter ?? 0);
 
   const loadAppointments = useCallback(async () => {
     try {
@@ -60,6 +176,46 @@ export const Calendar = () => {
   useEffect(() => {
     loadAppointments();
   }, [loadAppointments]);
+
+  useEffect(() => {
+    const next: StoredCalendarState = {
+      viewMode,
+      calendarScope,
+      roomFilter,
+      currentDate: format(currentDate, 'yyyy-MM-dd'),
+    };
+    localStorage.setItem(CALENDAR_STATE_KEY, JSON.stringify(next));
+  }, [viewMode, calendarScope, roomFilter, currentDate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (loading || viewMode === 'month' || !timeGridRef.current) return;
+    const today = new Date();
+    const days =
+      viewMode === 'day'
+        ? [currentDate]
+        : eachDayOfInterval({
+            start: startOfWeek(currentDate, { weekStartsOn: 1 }),
+            end: endOfWeek(currentDate, { weekStartsOn: 1 }),
+          });
+    if (!days.some((day) => isSameDay(day, today))) return;
+    const visibleApts = days.flatMap((day) => {
+      const dayStr = format(day, 'yyyy-MM-dd');
+      return appointments.filter((apt) => {
+        const aptDate = apt.appointmentDate.includes('T')
+          ? apt.appointmentDate.split('T')[0]
+          : apt.appointmentDate;
+        return aptDate === dayStr && (!roomFilter || apt.roomId === roomFilter);
+      });
+    });
+    const { startMinutes } = resolveGridRange(visibleApts);
+    const nowMin = today.getHours() * 60 + today.getMinutes();
+    timeGridRef.current.scrollTop = Math.max(0, ((nowMin - startMinutes) / 60) * HOUR_PX - 160);
+  }, [loading, viewMode, currentDate, appointments, roomFilter]);
 
   useEffect(() => {
     if (loading) return;
@@ -109,8 +265,9 @@ export const Calendar = () => {
 
   const formatTime = (time: string | null) => (time || '09:00').slice(0, 5);
 
-  const openAddModal = (date?: Date) => {
+  const openAddModal = (date?: Date, time?: string) => {
     setAddModalDate(date ? format(date, 'yyyy-MM-dd') : undefined);
+    setAddModalTime(time);
     setAddModalOpen(true);
   };
 
@@ -140,99 +297,117 @@ export const Calendar = () => {
     return format(currentDate, 'MMMM yyyy', { locale: tr });
   };
 
-  const renderDayView = () => {
-    const apts = getAppointmentsForDate(currentDate);
+  const renderTimeGrid = (days: Date[]) => {
+    const allApts = days.flatMap((day) => getAppointmentsForDate(day));
+    const { startMinutes, endMinutes } = resolveGridRange(allApts);
+    const hours: number[] = [];
+    for (let hour = startMinutes / 60; hour < endMinutes / 60; hour += 1) {
+      hours.push(hour);
+    }
+    const gridHeight = ((endMinutes - startMinutes) / 60) * HOUR_PX;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowTop = ((nowMinutes - startMinutes) / 60) * HOUR_PX;
+    const showNow = nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+
     return (
-      <div className="calendar-day-view">
-        <div className="day-date-row">
-          <span className="day-date">{format(currentDate, 'EEEE, d MMMM yyyy', { locale: tr })}</span>
-          <button
-            type="button"
-            className="day-add-btn"
-            onClick={() => openAddModal(currentDate)}
-          >
-            + Randevu Ekle
-          </button>
+      <div className="time-grid">
+        <div
+          className="time-grid-header"
+          style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))` }}
+        >
+          <div className="time-grid-gutter-head" />
+          {days.map((day) => (
+            <button
+              key={`${day.toISOString()}-head`}
+              type="button"
+              className={`time-grid-day-head ${isSameDay(day, now) ? 'is-today' : ''}`}
+              onClick={() => openAddModal(day)}
+            >
+              <span className="time-grid-day-name">{format(day, 'EEE', { locale: tr })}</span>
+              <span className="time-grid-day-num">{format(day, 'd')}</span>
+            </button>
+          ))}
         </div>
-        <div className="day-appointments">
-          {apts.length === 0 ? (
-            <p className="no-appointments">Bu gün için randevu yok.</p>
-          ) : (
-            apts.map((apt) => (
-              <div
-                key={apt.id}
-                className={`calendar-apt-card status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
-                style={cardStyle(apt)}
-                onClick={(e) => openUpdateModal(apt, e)}
-              >
-                <div className="apt-time">{formatTime(apt.appointmentTime)}</div>
-                <div className="apt-title">{apt.title || 'Randevu'}</div>
-                <div className="apt-client">{apt.clientName || 'Danışan'}</div>
-                {apt.roomName ? <div className="apt-room">{apt.roomName}</div> : null}
-                {calendarScope === 'clinic' && apt.therapistName ? (
-                  <div className="apt-therapist">{apt.therapistName}</div>
-                ) : null}
-                {apt.googleMeetLink && (
-                  <a
-                    href={apt.googleMeetLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="apt-meet-link"
-                    onClick={(e) => e.stopPropagation()}
-                    title="Meet linki"
-                  >
-                    Meet
-                  </a>
-                )}
-              </div>
-            ))
-          )}
+        <div className="time-grid-scroll" ref={timeGridRef}>
+          <div
+            className="time-grid-body"
+            style={{
+              gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))`,
+              height: gridHeight,
+            }}
+          >
+            <div className="time-grid-gutter">
+              {hours.map((hour) => (
+                <div key={hour} className="time-hour-label" style={{ height: HOUR_PX }}>
+                  {formatHourLabel(hour)}
+                </div>
+              ))}
+              <div className="time-hour-label time-hour-label-end">{formatHourLabel(endMinutes / 60)}</div>
+            </div>
+            {days.map((day) => {
+              const laidOut = layoutDayAppointments(getAppointmentsForDate(day));
+              const isToday = isSameDay(day, now);
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`time-day-col ${isToday ? 'is-today' : ''}`}
+                  style={{ height: gridHeight }}
+                  onClick={(event) => {
+                    const offsetY = event.clientY - event.currentTarget.getBoundingClientRect().top;
+                    openAddModal(day, snapTimeFromOffset(offsetY, startMinutes));
+                  }}
+                  role="presentation"
+                >
+                  {hours.map((hour) => (
+                    <div key={hour} className="time-hour-line" style={{ height: HOUR_PX }} />
+                  ))}
+                  {laidOut.map((item) => {
+                    const top = ((item.start - startMinutes) / 60) * HOUR_PX;
+                    const height = Math.max(((item.end - item.start) / 60) * HOUR_PX - 2, 28);
+                    const width = `calc((100% - 6px) / ${item.cols})`;
+                    const left = `calc(3px + ${item.col} * (100% - 6px) / ${item.cols})`;
+                    return (
+                      <div
+                        key={item.apt.id}
+                        className={`time-event status-${appointmentStatus(item.apt.status)} ${item.apt.mine === false ? 'not-mine' : ''}`}
+                        style={{
+                          top,
+                          height,
+                          width,
+                          left,
+                          ...cardStyle(item.apt),
+                        }}
+                        onClick={(event) => openUpdateModal(item.apt, event)}
+                      >
+                        <span className="time-event-time">{formatTime(item.apt.appointmentTime)}</span>
+                        <span className="time-event-title">{item.apt.clientName || item.apt.title || 'Randevu'}</span>
+                        {item.apt.roomName ? <span className="time-event-meta">{item.apt.roomName}</span> : null}
+                        {calendarScope === 'clinic' && item.apt.therapistName ? (
+                          <span className="time-event-meta">{item.apt.therapistName}</span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {showNow && isToday ? (
+                    <div className="time-now" style={{ top: nowTop }}>
+                      <span className="time-now-dot" />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
   };
 
+  const renderDayView = () => renderTimeGrid([currentDate]);
+
   const renderWeekView = () => {
     const start = startOfWeek(currentDate, { weekStartsOn: 1 });
     const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-    const days = eachDayOfInterval({ start, end });
-
-    return (
-      <div className="calendar-week-view">
-        {days.map((day) => {
-          const apts = getAppointmentsForDate(day);
-          return (
-            <div
-              key={day.toISOString()}
-              className="week-day-cell"
-              onClick={() => openAddModal(day)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && openAddModal(day)}
-            >
-              <div className="week-day-header">
-                <span className="week-day-name">{format(day, 'EEE', { locale: tr })}</span>
-                <span className="week-day-num">{format(day, 'd')}</span>
-              </div>
-              <div className="week-day-apts">
-                {apts.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className={`calendar-apt-card small status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
-                    style={cardStyle(apt)}
-                    onClick={(e) => openUpdateModal(apt, e)}
-                  >
-                    <span className="apt-time-sm">{formatTime(apt.appointmentTime)}</span>
-                    <span className="apt-client">{apt.clientName || 'Danışan'}</span>
-                    {apt.title && <span className="apt-title-sm">{apt.title}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
+    return renderTimeGrid(eachDayOfInterval({ start, end }));
   };
 
   const renderMonthView = () => {
@@ -253,7 +428,10 @@ export const Calendar = () => {
             </div>
           ))}
         </div>
-        <div className="month-grid">
+        <div
+          className="month-grid"
+          style={{ gridTemplateRows: `repeat(${days.length / 7}, minmax(0, 1fr))` }}
+        >
           {days.map((day) => {
             const apts = getAppointmentsForDate(day);
             const isCurrentMonth = isSameMonth(day, currentDate);
@@ -270,7 +448,7 @@ export const Calendar = () => {
               >
                 <span className="month-day-num">{format(day, 'd')}</span>
                 <div className="month-day-apts">
-                  {apts.slice(0, 3).map((apt) => (
+                  {apts.map((apt) => (
                     <div
                       key={apt.id}
                       className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
@@ -282,9 +460,6 @@ export const Calendar = () => {
                       {apt.clientName || 'Randevu'}
                     </div>
                   ))}
-                  {apts.length > 3 && (
-                    <span className="more-apts">+{apts.length - 3}</span>
-                  )}
                 </div>
               </div>
             );
@@ -383,8 +558,13 @@ export const Calendar = () => {
 
       <AddAppointmentModal
         isOpen={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
+        onClose={() => {
+          setAddModalOpen(false);
+          setAddModalTime(undefined);
+        }}
+        initialTime={addModalTime}
         onSuccess={(createdAppointment) => {
+          setAddModalTime(undefined);
           loadAppointments();
           if (createdAppointment) {
             setAddModalOpen(false);
