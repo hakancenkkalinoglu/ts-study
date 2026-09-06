@@ -1,11 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
-import { appointmentStatus } from '../types';
+import { appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import './Reports.css';
+
+type ClientSessionRow = {
+  clientId: number;
+  clientName: string;
+  sessions: number;
+  attended: number;
+  noShow: number;
+};
+
+type ClientDebtRow = {
+  clientId: number;
+  clientName: string;
+  pendingCount: number;
+  pendingAmount: number;
+};
 
 const formatMoney = (amount: number) => {
   if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(1)}M ₺`;
@@ -13,9 +29,34 @@ const formatMoney = (amount: number) => {
   return `${amount} ₺`;
 };
 
+const MONTHS = [
+  'Ocak',
+  'Şubat',
+  'Mart',
+  'Nisan',
+  'Mayıs',
+  'Haziran',
+  'Temmuz',
+  'Ağustos',
+  'Eylül',
+  'Ekim',
+  'Kasım',
+  'Aralık',
+];
+
+const parseAptDate = (dateStr: string) => {
+  const part = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.slice(0, 10);
+  const [year, month, day] = part.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+};
+
 export const Reports = () => {
+  const navigate = useNavigate();
+  const now = new Date();
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
 
   const loadData = useCallback(async () => {
     try {
@@ -33,23 +74,74 @@ export const Reports = () => {
     loadData();
   }, [loadData]);
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+  const yearsFromData = appointments.map((a) => parseAptDate(a.appointmentDate).getFullYear());
+  const minYear = yearsFromData.length
+    ? Math.min(...yearsFromData, now.getFullYear(), selectedYear)
+    : Math.min(now.getFullYear() - 2, selectedYear);
+  const maxYear = yearsFromData.length
+    ? Math.max(...yearsFromData, now.getFullYear(), selectedYear)
+    : Math.max(now.getFullYear(), selectedYear);
+  const yearOptions: number[] = [];
+  for (let year = maxYear; year >= minYear; year -= 1) {
+    yearOptions.push(year);
+  }
 
-  const getDateFromStr = (dateStr: string) => {
-    const d = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
-    return new Date(d);
+  const isCurrentPeriod = selectedYear === now.getFullYear() && selectedMonth === now.getMonth();
+  const monthLabel = `${MONTHS[selectedMonth]} ${selectedYear}`;
+
+  const goPrevMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear((year) => year - 1);
+    } else {
+      setSelectedMonth((month) => month - 1);
+    }
+  };
+
+  const goNextMonth = () => {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear((year) => year + 1);
+    } else {
+      setSelectedMonth((month) => month + 1);
+    }
   };
 
   const appointmentsThisMonth = appointments.filter((a) => {
-    const d = getDateFromStr(a.appointmentDate);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    const d = parseAptDate(a.appointmentDate);
+    return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
   });
 
   const appointmentsThisYear = appointments.filter((a) => {
-    const d = getDateFromStr(a.appointmentDate);
-    return d.getFullYear() === currentYear;
+    const d = parseAptDate(a.appointmentDate);
+    return d.getFullYear() === selectedYear;
+  });
+
+  const countedThisMonth = appointmentsThisMonth.filter(
+    (a) => appointmentStatus(a.status) !== 'cancelled'
+  );
+  const countedThisYear = appointmentsThisYear.filter(
+    (a) => appointmentStatus(a.status) !== 'cancelled'
+  );
+
+  const monthTotal = appointmentsThisMonth.length;
+  const statusBreakdown = (
+    [
+      { key: 'attended' as const, color: '#228b22' },
+      { key: 'no_show' as const, color: '#c0392b' },
+      { key: 'cancelled' as const, color: '#6c757d' },
+      { key: 'scheduled' as const, color: '#6c757d' },
+    ] as const
+  ).map((row) => {
+    const count = appointmentsThisMonth.filter((a) => appointmentStatus(a.status) === row.key).length;
+    const percent = monthTotal === 0 ? 0 : Math.round((count / monthTotal) * 100);
+    return {
+      key: row.key,
+      label: appointmentStatusLabel(row.key),
+      count,
+      percent,
+      color: row.color,
+    };
   });
 
   const fee = (a: AppointmentWithClient) => a.agreedFee ?? 0;
@@ -62,14 +154,62 @@ export const Reports = () => {
     .filter((a) => a.isPaid)
     .reduce((sum, a) => sum + fee(a), 0);
 
-  const pendingTotal = appointments
+  const pendingMonth = appointmentsThisMonth
+    .filter((a) => !a.isPaid && appointmentStatus(a.status) !== 'cancelled')
+    .reduce((sum, a) => sum + fee(a), 0);
+
+  const pendingYear = appointmentsThisYear
     .filter((a) => !a.isPaid && appointmentStatus(a.status) !== 'cancelled')
     .reduce((sum, a) => sum + fee(a), 0);
 
   const chartData = [
     { name: 'Kazanılan', value: earnedThisYear, fill: '#28a745' },
-    { name: 'Beklenen', value: pendingTotal, fill: '#ffc107' },
+    { name: 'Beklenen', value: pendingYear, fill: '#ffc107' },
   ];
+
+  const sessionByClient = new Map<number, ClientSessionRow>();
+  for (const apt of countedThisMonth) {
+    const existing = sessionByClient.get(apt.clientId);
+    const status = appointmentStatus(apt.status);
+    if (existing) {
+      existing.sessions += 1;
+      if (status === 'attended') existing.attended += 1;
+      if (status === 'no_show') existing.noShow += 1;
+    } else {
+      sessionByClient.set(apt.clientId, {
+        clientId: apt.clientId,
+        clientName: apt.clientName || 'İsimsiz',
+        sessions: 1,
+        attended: status === 'attended' ? 1 : 0,
+        noShow: status === 'no_show' ? 1 : 0,
+      });
+    }
+  }
+  const sessionRows = [...sessionByClient.values()].sort((a, b) => {
+    if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+    return a.clientName.localeCompare(b.clientName, 'tr');
+  });
+
+  const debtByClient = new Map<number, ClientDebtRow>();
+  for (const apt of appointments) {
+    if (apt.isPaid || appointmentStatus(apt.status) === 'cancelled') continue;
+    const existing = debtByClient.get(apt.clientId);
+    if (existing) {
+      existing.pendingCount += 1;
+      existing.pendingAmount += fee(apt);
+    } else {
+      debtByClient.set(apt.clientId, {
+        clientId: apt.clientId,
+        clientName: apt.clientName || 'İsimsiz',
+        pendingCount: 1,
+        pendingAmount: fee(apt),
+      });
+    }
+  }
+  const debtRows = [...debtByClient.values()].sort((a, b) => {
+    if (b.pendingAmount !== a.pendingAmount) return b.pendingAmount - a.pendingAmount;
+    return a.clientName.localeCompare(b.clientName, 'tr');
+  });
 
   const asOfText = format(now, "d MMM yyyy HH:mm", { locale: tr });
 
@@ -87,39 +227,103 @@ export const Reports = () => {
       <h1 className="reports-title">Raporlar</h1>
       <p className="reports-subtitle">Son güncelleme: {asOfText}</p>
 
+      <div className="reports-period">
+        <button type="button" className="reports-period-nav" onClick={goPrevMonth}>
+          ‹
+        </button>
+        <select
+          className="reports-period-select"
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(Number(e.target.value))}
+          aria-label="Ay"
+        >
+          {MONTHS.map((name, index) => (
+            <option key={name} value={index}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="reports-period-select"
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          aria-label="Yıl"
+        >
+          {yearOptions.map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="reports-period-nav" onClick={goNextMonth}>
+          ›
+        </button>
+        {!isCurrentPeriod ? (
+          <button
+            type="button"
+            className="reports-period-today"
+            onClick={() => {
+              setSelectedYear(now.getFullYear());
+              setSelectedMonth(now.getMonth());
+            }}
+          >
+            Bu aya dön
+          </button>
+        ) : null}
+      </div>
+
       <div className="reports-grid">
         <div className="report-card">
-          <h3 className="report-card-title">Bu Ay Toplam Randevu</h3>
-          <p className="report-card-value report-card-value-neutral">{appointmentsThisMonth.length}</p>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <h3 className="report-card-title">{monthLabel} randevu</h3>
+          <p className="report-card-value report-card-value-neutral">{countedThisMonth.length}</p>
+          <span className="report-card-meta">İptaller hariç · {monthLabel}</span>
         </div>
 
         <div className="report-card">
-          <h3 className="report-card-title">Bu Yıl Toplam Randevu</h3>
-          <p className="report-card-value report-card-value-neutral">{appointmentsThisYear.length}</p>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <h3 className="report-card-title">{selectedYear} randevu</h3>
+          <p className="report-card-value report-card-value-neutral">{countedThisYear.length}</p>
+          <span className="report-card-meta">İptaller hariç · {selectedYear}</span>
         </div>
 
         <div className="report-card">
-          <h3 className="report-card-title">Bu Yıl Kazanılan Toplam Para</h3>
+          <h3 className="report-card-title">{selectedYear} tahsil edilen</h3>
           <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisYear)}</p>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <span className="report-card-meta">{selectedYear}</span>
         </div>
 
         <div className="report-card">
-          <h3 className="report-card-title">Bu Ay Kazanılan Toplam Para</h3>
+          <h3 className="report-card-title">{monthLabel} tahsil edilen</h3>
           <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisMonth)}</p>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <span className="report-card-meta">{monthLabel}</span>
+        </div>
+
+        <div className="report-card report-card-status">
+          <h3 className="report-card-title">{monthLabel} durum</h3>
+          {monthTotal === 0 ? (
+            <p className="report-status-empty">Bu ayda randevu yok.</p>
+          ) : (
+            <ul className="report-status-list">
+              {statusBreakdown.map((row) => (
+                <li key={row.key}>
+                  <span className="report-status-dot" style={{ background: row.color }} />
+                  <span className="report-status-label">{row.label}</span>
+                  <span className="report-status-count">{row.count}</span>
+                  <span className="report-status-percent">{row.percent}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <span className="report-card-meta">Yüzde tüm randevulara göre · {monthLabel}</span>
         </div>
 
         <div className="report-card">
-          <h3 className="report-card-title">Bekleyen Ödemeler</h3>
-          <p className="report-card-value report-card-value-pending">{formatMoney(pendingTotal)}</p>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <h3 className="report-card-title">{monthLabel} bekleyen</h3>
+          <p className="report-card-value report-card-value-pending">{formatMoney(pendingMonth)}</p>
+          <span className="report-card-meta">{monthLabel}</span>
         </div>
         
         <div className="report-card report-card-chart">
-          <h3 className="report-card-title">Kazanılan vs Beklenen Para</h3>
+          <h3 className="report-card-title">{selectedYear} kazanılan vs beklenen</h3>
           <div className="report-chart-wrapper">
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
@@ -151,7 +355,85 @@ export const Reports = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <span className="report-card-meta">As of {asOfText}</span>
+          <span className="report-card-meta">{selectedYear}</span>
+        </div>
+      </div>
+
+      <div className="reports-client-grid">
+        <div className="report-card report-card-table">
+          <h3 className="report-card-title">{monthLabel} danışan seansları</h3>
+          {sessionRows.length === 0 ? (
+            <p className="report-status-empty">Bu ayda sayılan randevu yok.</p>
+          ) : (
+            <div className="reports-table-wrap">
+              <table className="reports-table">
+                <thead>
+                  <tr>
+                    <th>Danışan</th>
+                    <th>Seans</th>
+                    <th>Geldi</th>
+                    <th>Gelmedi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionRows.map((row) => (
+                    <tr key={row.clientId}>
+                      <td>
+                        <button
+                          type="button"
+                          className="reports-client-link"
+                          onClick={() => navigate(`/client/${row.clientId}`)}
+                        >
+                          {row.clientName}
+                        </button>
+                      </td>
+                      <td>{row.sessions}</td>
+                      <td>{row.attended}</td>
+                      <td>{row.noShow}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <span className="report-card-meta">İptaller hariç · çok seans üstte · {monthLabel}</span>
+        </div>
+
+        <div className="report-card report-card-table">
+          <h3 className="report-card-title">Borçlu danışanlar</h3>
+          {debtRows.length === 0 ? (
+            <p className="report-status-empty">Bekleyen ödeme yok.</p>
+          ) : (
+            <div className="reports-table-wrap">
+              <table className="reports-table">
+                <thead>
+                  <tr>
+                    <th>Danışan</th>
+                    <th>Bekleyen seans</th>
+                    <th>Tutar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {debtRows.map((row) => (
+                    <tr key={row.clientId}>
+                      <td>
+                        <button
+                          type="button"
+                          className="reports-client-link"
+                          onClick={() => navigate(`/client/${row.clientId}`)}
+                        >
+                          {row.clientName}
+                        </button>
+                      </td>
+                      <td>{row.pendingCount}</td>
+                      <td className="reports-debt-amount">{formatMoney(row.pendingAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <span className="report-card-meta">Ödemeler ile aynı kural: ödenmemiş, iptal hariç, tüm zamanlar</span>
         </div>
       </div>
     </div>

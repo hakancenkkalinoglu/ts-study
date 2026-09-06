@@ -55,6 +55,7 @@ export const ClientDetail = () => {
     noteDate: new Date().toISOString().split('T')[0],
   });
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [noteSearch, setNoteSearch] = useState('');
 
   const loadClientData = useCallback(async () => {
     if (!id) return;
@@ -303,6 +304,14 @@ export const ClientDetail = () => {
     }
   };
 
+  const noteMatchesSearch = (note: Note) => {
+    const query = noteSearch.trim().toLocaleLowerCase('tr-TR');
+    if (!query) return true;
+    const title = (note.title || '').toLocaleLowerCase('tr-TR');
+    const content = (note.content || '').toLocaleLowerCase('tr-TR');
+    return title.includes(query) || content.includes(query);
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('tr-TR', {
@@ -509,6 +518,13 @@ export const ClientDetail = () => {
         <div className="section-header">
           <h2>Randevular</h2>
           <div className="section-actions">
+            <input
+              type="search"
+              className="note-search-input"
+              placeholder="Notlarda ara..."
+              value={noteSearch}
+              onChange={(e) => setNoteSearch(e.target.value)}
+            />
             <button
               className="all-notes-button"
               onClick={() => setShowAllNotesModal(true)}
@@ -824,9 +840,15 @@ export const ClientDetail = () => {
                       <p className="no-notes-in-apt">
                         Bu randevuya henüz not eklenmemiş.
                       </p>
+                    ) : (notesByAppointment[apt.id] || []).filter(noteMatchesSearch).length === 0 ? (
+                      <p className="no-notes-in-apt">
+                        Bu randevuda aramanızla eşleşen not yok.
+                      </p>
                     ) : (
                       <div className="notes-list">
-                        {(notesByAppointment[apt.id] || []).map((note) => renderNoteCard(note))}
+                        {(notesByAppointment[apt.id] || [])
+                          .filter(noteMatchesSearch)
+                          .map((note) => renderNoteCard(note))}
                       </div>
                     )}
                       </>
@@ -852,11 +874,20 @@ export const ClientDetail = () => {
               </button>
             </div>
             <div className="modal-body">
+              <input
+                type="search"
+                className="note-search-input note-search-input-modal"
+                placeholder="Başlık veya içerikte ara..."
+                value={noteSearch}
+                onChange={(e) => setNoteSearch(e.target.value)}
+              />
               {allNotes.length === 0 ? (
                 <p className="empty-notes">Henüz not eklenmemiş.</p>
+              ) : allNotes.filter(noteMatchesSearch).length === 0 ? (
+                <p className="empty-notes">Aramanızla eşleşen not yok.</p>
               ) : (
                 <div className="notes-list">
-                  {allNotes.map((note) => renderNoteCard(note))}
+                  {allNotes.filter(noteMatchesSearch).map((note) => renderNoteCard(note))}
                 </div>
               )}
             </div>
