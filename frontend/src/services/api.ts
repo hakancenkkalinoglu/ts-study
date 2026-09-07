@@ -35,7 +35,12 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       const url = String(err.config?.url || '');
-      if (!url.includes('/auth/login') && !url.includes('/auth/register') && !url.includes('/auth/google/login')) {
+      if (
+        !url.includes('/auth/login') &&
+        !url.includes('/auth/register') &&
+        !url.includes('/auth/google/login') &&
+        !url.includes('/auth/google/exchange')
+      ) {
         localStorage.removeItem(TOKEN_KEY);
         window.location.href = '/';
       }
@@ -66,6 +71,15 @@ export const register = async (
   const response = await api.post<{ token: string; username: string; email?: string }>('/auth/register', {
     email,
     password,
+  });
+  return response.data;
+};
+
+export const exchangeGoogleAuth = async (
+  code: string
+): Promise<{ token: string; username: string; email?: string }> => {
+  const response = await api.post<{ token: string; username: string; email?: string }>('/auth/google/exchange', {
+    code,
   });
   return response.data;
 };

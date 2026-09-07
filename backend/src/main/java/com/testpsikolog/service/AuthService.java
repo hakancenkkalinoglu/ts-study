@@ -5,6 +5,7 @@ import com.testpsikolog.dto.LoginRequest;
 import com.testpsikolog.dto.LoginResponse;
 import com.testpsikolog.security.AuthUser;
 import com.testpsikolog.security.JwtService;
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -143,21 +144,64 @@ public class AuthService {
     }
 
     public void seedDefaultUser() {
+        if (!appProperties.isSeedEnabled()) {
+            return;
+        }
+        String username = appProperties.getSeedUsername() == null ? "" : appProperties.getSeedUsername().trim();
+        String password = appProperties.getSeedPassword() == null ? "" : appProperties.getSeedPassword();
+        if (username.isBlank() || password.isBlank()) {
+            System.out.println("APP_SEED_ENABLED is true but username or password is empty; skipping seed user.");
+            return;
+        }
         Integer existing = jdbc.query(
                 "SELECT id FROM app_users WHERE username = ?",
                 rs -> rs.next() ? rs.getInt("id") : null,
-                appProperties.getSeedUsername()
+                username
         );
         if (existing != null) {
             return;
         }
-        String hash = passwordEncoder.encode(appProperties.getSeedPassword());
+        String hash = passwordEncoder.encode(password);
         jdbc.update(
                 "INSERT INTO app_users (username, passwordHash) VALUES (?, ?)",
-                appProperties.getSeedUsername(),
+                username,
                 hash
         );
-        System.out.println("Varsayılan giriş kullanıcısı oluşturuldu: " + appProperties.getSeedUsername());
+        System.out.println("Seed login user created.");
+    }
+
+    public String createLoginExchange(String token) {
+        String code = UUID.randomUUID().toString().replace("-", "");
+        long expiresAt = Instant.now().plusSeconds(120).toEpochMilli();
+        jdbc.update(
+                "INSERT INTO auth_exchange_codes (code, token, expiresAt) VALUES (?, ?, ?)",
+                code,
+                token,
+                expiresAt
+        );
+        return code;
+    }
+
+    public LoginResponse consumeLoginExchange(String code) {
+        if (code == null || code.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz.");
+        }
+        jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", Instant.now().toEpochMilli());
+        String token = jdbc.query(
+                "SELECT token FROM auth_exchange_codes WHERE code = ?",
+                rs -> rs.next() ? rs.getString("token") : null,
+                code.trim()
+        );
+        jdbc.update("DELETE FROM auth_exchange_codes WHERE code = ?", code.trim());
+        if (token == null || token.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz veya süresi doldu.");
+        }
+        AuthUser parsed = jwtService.parse(token);
+        AuthUser user = resolveFromToken(parsed);
+        if (user == null || user.id() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz.");
+        }
+        return new LoginResponse(token, user.username(), user.email());
     }
 
     private LoginResponse toResponse(AuthUser user) {

@@ -36,7 +36,11 @@ export const ClientsList = () => {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm('Bu danışanı silmek istediğinize emin misiniz?')) {
+    if (
+      window.confirm(
+        'Bu danışanı silmek randevularını ve seans notlarını da kalıcı olarak siler. Devam etmek istiyor musunuz?'
+      )
+    ) {
       try {
         await deleteClient(id);
         loadClients();

@@ -1,6 +1,7 @@
 package com.testpsikolog.controller;
 
 import com.testpsikolog.config.AppProperties;
+import com.testpsikolog.dto.AuthExchangeRequest;
 import com.testpsikolog.dto.GoogleAuthUrlResponse;
 import com.testpsikolog.dto.GoogleStatusResponse;
 import com.testpsikolog.dto.LoginRequest;
@@ -79,14 +80,19 @@ public class AuthController {
         try {
             String jwt = googleCalendarService.completeOAuth(code, state);
             if (jwt != null) {
-                String token = URLEncoder.encode(jwt, StandardCharsets.UTF_8);
-                response.sendRedirect(appProperties.getFrontendUrl() + "/?google=success&token=" + token);
+                String authCode = URLEncoder.encode(authService.createLoginExchange(jwt), StandardCharsets.UTF_8);
+                response.sendRedirect(appProperties.getFrontendUrl() + "/?google=success&auth=" + authCode);
                 return;
             }
             response.sendRedirect(appProperties.getFrontendUrl() + "/takvim?google=success");
         } catch (Exception ex) {
             response.sendRedirect(appProperties.getFrontendUrl() + failPath);
         }
+    }
+
+    @PostMapping("/auth/google/exchange")
+    public LoginResponse exchangeGoogle(@RequestBody AuthExchangeRequest request) {
+        return authService.consumeLoginExchange(request == null ? null : request.code());
     }
 
     @GetMapping("/auth/google/status")

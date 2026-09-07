@@ -181,7 +181,7 @@ export const ClinicPage = () => {
         <div>
           <h1>{clinic.name}</h1>
           <p className="clinic-lead">
-            {clinic.role === 'owner' ? 'Kurucusunuz.' : 'Üyesiniz.'} Meslektaşınız takvimde saat ve isim görür; notlara giremez.
+            {clinic.role === 'owner' ? 'Kurucusunuz.' : 'Üyesiniz.'} Meslektaşınız takvimde saat ve oda görür; danışan adı, not ve ücret gizlenir.
           </p>
         </div>
         <div className="clinic-code-box">

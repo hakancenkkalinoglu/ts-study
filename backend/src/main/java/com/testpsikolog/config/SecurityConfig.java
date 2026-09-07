@@ -44,7 +44,8 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/google/login",
-                                "/api/auth/google/callback"
+                                "/api/auth/google/callback",
+                                "/api/auth/google/exchange"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {

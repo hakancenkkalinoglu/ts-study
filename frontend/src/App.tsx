@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { MainNav } from './components/MainNav';
@@ -10,26 +10,69 @@ import { Calendar } from './pages/Calendar';
 import { Payments } from './pages/Payments';
 import { Reports } from './pages/Reports';
 import { ClinicPage } from './pages/Clinic';
-import { getStoredToken, setStoredToken } from './services/api';
+import { exchangeGoogleAuth, getStoredToken, setStoredToken } from './services/api';
 import './App.css';
 
-function consumeGoogleTokenFromUrl(): string | null {
+const readAuthCodeFromUrl = (): string | null => {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
-  if (!token) {
-    return getStoredToken();
-  }
-  setStoredToken(token);
+  return params.get('auth');
+};
+
+const stripAuthQuery = (failed = false): void => {
+  const params = new URLSearchParams(window.location.search);
   params.delete('token');
-  params.delete('google');
+  params.delete('auth');
+  if (failed) {
+    params.set('google', 'error');
+  } else {
+    params.delete('google');
+  }
   const query = params.toString();
   const next = window.location.pathname + (query ? `?${query}` : '') + window.location.hash;
   window.history.replaceState({}, '', next);
-  return token;
-}
+};
 
 function App() {
-  const [token, setToken] = useState<string | null>(() => consumeGoogleTokenFromUrl());
+  const [authCode] = useState(() => readAuthCodeFromUrl());
+  const [token, setToken] = useState<string | null>(() => (authCode ? null : getStoredToken()));
+  const [bootstrapping, setBootstrapping] = useState(() => Boolean(authCode));
+
+  useEffect(() => {
+    const leakedToken = new URLSearchParams(window.location.search).has('token');
+    if (!authCode) {
+      if (leakedToken) {
+        stripAuthQuery();
+      }
+      return;
+    }
+    let cancelled = false;
+    exchangeGoogleAuth(authCode)
+      .then((result) => {
+        if (cancelled) return;
+        setStoredToken(result.token);
+        stripAuthQuery();
+        setToken(result.token);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        stripAuthQuery(true);
+        setToken(getStoredToken());
+      })
+      .finally(() => {
+        if (!cancelled) setBootstrapping(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authCode]);
+
+  if (bootstrapping) {
+    return (
+      <ThemeProvider>
+        <Login onSuccess={() => setToken(getStoredToken())} bootstrapping />
+      </ThemeProvider>
+    );
+  }
 
   if (!token) {
     return (

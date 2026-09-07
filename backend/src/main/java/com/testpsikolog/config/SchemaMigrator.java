@@ -9,7 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-@Order(2)
+@Order(1)
 public class SchemaMigrator implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
@@ -20,6 +20,8 @@ public class SchemaMigrator implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        createCoreTables();
+
         if (!hasColumn("clients", "userId")) {
             jdbc.execute("ALTER TABLE clients ADD COLUMN userId INTEGER");
         }
@@ -30,17 +32,6 @@ public class SchemaMigrator implements ApplicationRunner {
         if (firstUserId != null) {
             jdbc.update("UPDATE clients SET userId = ? WHERE userId IS NULL", firstUserId);
         }
-
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS google_tokens (
-                  userId INTEGER PRIMARY KEY,
-                  accessToken TEXT NOT NULL,
-                  refreshToken TEXT,
-                  expiryDate INTEGER
-                )
-                """
-        );
 
         if (!hasColumn("app_users", "email")) {
             jdbc.execute("ALTER TABLE app_users ADD COLUMN email TEXT");
@@ -107,6 +98,93 @@ public class SchemaMigrator implements ApplicationRunner {
         if (!hasColumn("appointments", "roomId")) {
             jdbc.execute("ALTER TABLE appointments ADD COLUMN roomId INTEGER");
         }
+
+        jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
+    }
+
+    private void createCoreTables() {
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_users (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT NOT NULL,
+                  email TEXT,
+                  passwordHash TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clients (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  email TEXT,
+                  name TEXT,
+                  birthDate TEXT,
+                  agreedFee INTEGER,
+                  password TEXT,
+                  userId INTEGER,
+                  phone TEXT,
+                  emergencyName TEXT,
+                  emergencyPhone TEXT,
+                  createdAt TEXT NOT NULL,
+                  updatedAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS appointments (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  clientId INTEGER NOT NULL,
+                  appointmentDate TEXT NOT NULL,
+                  appointmentTime TEXT,
+                  title TEXT,
+                  isPaid INTEGER NOT NULL DEFAULT 0,
+                  status TEXT,
+                  googleEventId TEXT,
+                  googleMeetLink TEXT,
+                  googleHtmlLink TEXT,
+                  clinicId INTEGER,
+                  roomId INTEGER,
+                  createdAt TEXT NOT NULL,
+                  updatedAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS client_notes (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  clientId INTEGER NOT NULL,
+                  appointmentId INTEGER,
+                  title TEXT,
+                  content TEXT,
+                  filePath TEXT,
+                  noteDate TEXT,
+                  createdAt TEXT NOT NULL,
+                  updatedAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS google_tokens (
+                  userId INTEGER PRIMARY KEY,
+                  accessToken TEXT NOT NULL,
+                  refreshToken TEXT,
+                  expiryDate INTEGER
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_exchange_codes (
+                  code TEXT PRIMARY KEY,
+                  token TEXT NOT NULL,
+                  expiresAt INTEGER NOT NULL
+                )
+                """
+        );
     }
 
     private boolean hasColumn(String table, String column) {

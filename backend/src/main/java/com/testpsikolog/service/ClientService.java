@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -136,7 +137,13 @@ public class ClientService {
         return value.trim();
     }
 
+    @Transactional
     public int delete(long userId, long id) {
+        if (!ownsClient(userId, id)) {
+            return 0;
+        }
+        jdbc.update("DELETE FROM client_notes WHERE clientId = ?", id);
+        jdbc.update("DELETE FROM appointments WHERE clientId = ?", id);
         return jdbc.update("DELETE FROM clients WHERE id = ? AND userId = ?", id, userId);
     }
 

@@ -4,9 +4,10 @@ import './Login.css';
 
 interface LoginProps {
   onSuccess: () => void;
+  bootstrapping?: boolean;
 }
 
-export const Login = ({ onSuccess }: LoginProps) => {
+export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,72 +74,80 @@ export const Login = ({ onSuccess }: LoginProps) => {
     <div className="login-page">
       <div className="login-card">
         <h1 className="login-title">TestPsikolog</h1>
-        <p className="login-subtitle">
-          Gmail ile giriş yapınca takvim ve Meet de bağlanır. Forma e-posta yazmak Google izni vermez.
-        </p>
-        <button
-          type="button"
-          className="login-google-btn"
-          onClick={handleGoogle}
-          disabled={loading || googleLoading}
-        >
-          {googleLoading ? 'Google açılıyor...' : 'Google ile devam et'}
-        </button>
-        <div className="login-divider">
-          <span>veya e-posta ile</span>
-        </div>
-        <form onSubmit={handleSubmit} className="login-form">
-          <div className="form-group">
-            <label htmlFor="email">E-posta</label>
-            <input
-              id="email"
-              type={mode === 'register' ? 'email' : 'text'}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="password">Şifre</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-              required
-              minLength={mode === 'register' ? 6 : undefined}
-            />
-          </div>
-          {mode === 'register' && (
-            <div className="form-group">
-              <label htmlFor="passwordRepeat">Şifre tekrar</label>
-              <input
-                id="passwordRepeat"
-                type="password"
-                value={passwordRepeat}
-                onChange={(e) => setPasswordRepeat(e.target.value)}
-                autoComplete="new-password"
-                required
-                minLength={6}
-              />
+        {bootstrapping ? (
+          <p className="login-subtitle">Google girişi tamamlanıyor...</p>
+        ) : (
+          <p className="login-subtitle">
+            Gmail ile giriş yapınca takvim ve Meet de bağlanır. Forma e-posta yazmak Google izni vermez.
+          </p>
+        )}
+        {bootstrapping ? null : (
+          <>
+            <button
+              type="button"
+              className="login-google-btn"
+              onClick={handleGoogle}
+              disabled={loading || googleLoading}
+            >
+              {googleLoading ? 'Google açılıyor...' : 'Google ile devam et'}
+            </button>
+            <div className="login-divider">
+              <span>veya e-posta ile</span>
             </div>
-          )}
-          {error && <div className="login-error">{error}</div>}
-          <button type="submit" className="login-btn" disabled={loading || googleLoading}>
-            {loading
-              ? mode === 'register'
-                ? 'Kayıt yapılıyor...'
-                : 'Giriş yapılıyor...'
-              : mode === 'register'
-                ? 'Kayıt ol'
-                : 'Giriş yap'}
-          </button>
-        </form>
-        <button type="button" className="login-switch" onClick={switchMode}>
-          {mode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}
-        </button>
+            <form onSubmit={handleSubmit} className="login-form">
+              <div className="form-group">
+                <label htmlFor="email">E-posta</label>
+                <input
+                  id="email"
+                  type={mode === 'register' ? 'email' : 'text'}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="password">Şifre</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                  required
+                  minLength={mode === 'register' ? 6 : undefined}
+                />
+              </div>
+              {mode === 'register' && (
+                <div className="form-group">
+                  <label htmlFor="passwordRepeat">Şifre tekrar</label>
+                  <input
+                    id="passwordRepeat"
+                    type="password"
+                    value={passwordRepeat}
+                    onChange={(e) => setPasswordRepeat(e.target.value)}
+                    autoComplete="new-password"
+                    required
+                    minLength={6}
+                  />
+                </div>
+              )}
+              {error && <div className="login-error">{error}</div>}
+              <button type="submit" className="login-btn" disabled={loading || googleLoading}>
+                {loading
+                  ? mode === 'register'
+                    ? 'Kayıt yapılıyor...'
+                    : 'Giriş yapılıyor...'
+                  : mode === 'register'
+                    ? 'Kayıt ol'
+                    : 'Giriş yap'}
+              </button>
+            </form>
+            <button type="button" className="login-switch" onClick={switchMode}>
+              {mode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

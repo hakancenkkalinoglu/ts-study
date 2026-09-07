@@ -36,7 +36,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if ("/api/auth/login".equals(path)
                 || "/api/auth/register".equals(path)
                 || "/api/auth/google/login".equals(path)
-                || "/api/auth/google/callback".equals(path)) {
+                || "/api/auth/google/callback".equals(path)
+                || "/api/auth/google/exchange".equals(path)) {
             return true;
         }
         return false;

@@ -27,6 +27,13 @@ import '../components/AddClientModal.css';
 type ViewMode = 'day' | 'week' | 'month';
 type CalendarScope = 'mine' | 'clinic';
 
+const clinicSafeLabel = (apt: AppointmentWithClient): string => {
+  if (apt.mine === false) {
+    return apt.roomName || 'Seans';
+  }
+  return apt.clientName || apt.title || 'Randevu';
+};
+
 const CALENDAR_STATE_KEY = 'calendarViewState';
 
 type StoredCalendarState = {
@@ -380,7 +387,7 @@ export const Calendar = () => {
                         onClick={(event) => openUpdateModal(item.apt, event)}
                       >
                         <span className="time-event-time">{formatTime(item.apt.appointmentTime)}</span>
-                        <span className="time-event-title">{item.apt.clientName || item.apt.title || 'Randevu'}</span>
+                        <span className="time-event-title">{clinicSafeLabel(item.apt)}</span>
                         {item.apt.roomName ? <span className="time-event-meta">{item.apt.roomName}</span> : null}
                         {calendarScope === 'clinic' && item.apt.therapistName ? (
                           <span className="time-event-meta">{item.apt.therapistName}</span>
@@ -454,10 +461,10 @@ export const Calendar = () => {
                       className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
                       style={cardStyle(apt)}
                       onClick={(e) => openUpdateModal(apt, e)}
-                      title={`${formatTime(apt.appointmentTime)} - ${apt.clientName || 'Danışan'}${apt.roomName ? ` · ${apt.roomName}` : ''}${apt.title ? ` - ${apt.title}` : ''}`}
+                      title={`${formatTime(apt.appointmentTime)} · ${clinicSafeLabel(apt)}${apt.mine === false ? '' : apt.title ? ` - ${apt.title}` : ''}`}
                     >
                       <span className="apt-time-tiny">{formatTime(apt.appointmentTime)}</span>
-                      {apt.clientName || 'Randevu'}
+                      {clinicSafeLabel(apt)}
                     </div>
                   ))}
                 </div>
@@ -589,7 +596,7 @@ export const Calendar = () => {
               </button>
             </div>
             <p>
-              {formatTime(peekAppointment.appointmentTime)} · {peekAppointment.clientName || 'Seans'}
+              {formatTime(peekAppointment.appointmentTime)} · {clinicSafeLabel(peekAppointment)}
             </p>
             {peekAppointment.roomName ? <p>Oda: {peekAppointment.roomName}</p> : null}
             {peekAppointment.therapistName ? <p>Terapist: {peekAppointment.therapistName}</p> : null}

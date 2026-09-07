@@ -5,12 +5,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
 
-    private String jwtSecret = "testpsikolog-secret-change-in-production";
+    private String jwtSecret = "";
     private long jwtExpirationMs = 604800000L;
     private String frontendUrl = "http://localhost:5174";
     private String corsOrigins = "http://localhost:5173,http://localhost:5174";
-    private String seedUsername = "testpsikolog";
-    private String seedPassword = "test1234";
+    private boolean seedEnabled = false;
+    private String seedUsername = "";
+    private String seedPassword = "";
     private final Google google = new Google();
 
     public String getJwtSecret() {
@@ -43,6 +44,14 @@ public class AppProperties {
 
     public void setCorsOrigins(String corsOrigins) {
         this.corsOrigins = corsOrigins;
+    }
+
+    public boolean isSeedEnabled() {
+        return seedEnabled;
+    }
+
+    public void setSeedEnabled(boolean seedEnabled) {
+        this.seedEnabled = seedEnabled;
     }
 
     public String getSeedUsername() {
