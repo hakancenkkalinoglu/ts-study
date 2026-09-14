@@ -1,20 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllAppointments, updateAppointment } from '../services/api';
-import type { AppointmentStatus, AppointmentWithClient } from '../types';
-import { appointmentStatus, appointmentStatusLabel } from '../types';
+import { getAllAppointments, getProfile, getUpcomingAppointments, updateAppointment } from '../services/api';
+import type { AppointmentStatus, AppointmentWithClient, UpdateAppointmentInput } from '../types';
+import { appointmentAmount, appointmentStatus, appointmentStatusLabel, sessionDurationLabel } from '../types';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { istanbulTodayYmd } from '../utils/dates';
 import './Today.css';
-
-const istanbulTodayYmd = (): string =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Istanbul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-
 const aptDateYmd = (dateStr: string): string =>
   dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.slice(0, 10);
 
@@ -26,14 +18,17 @@ export const Today = () => {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [upcoming, setUpcoming] = useState<AppointmentWithClient[]>([]);
 
   const loadAppointments = useCallback(async (silent = false) => {
     try {
       if (!silent) {
         setLoading(true);
       }
-      const data = await getAllAppointments();
+      const [data, profile] = await Promise.all([getAllAppointments(), getProfile().catch(() => null)]);
       setAppointments(data);
+      const hours = profile?.reminderHours ?? 24;
+      setUpcoming(await getUpcomingAppointments(hours));
     } catch (error) {
       console.error('Error loading today appointments:', error);
     } finally {
@@ -73,28 +68,47 @@ export const Today = () => {
 
   const headingDate = format(new Date(today), 'd MMMM yyyy', { locale: tr });
 
-  const handleStatus = async (apt: AppointmentWithClient, status: AppointmentStatus) => {
-    const previous = apt.status;
+  const handlePatch = async (apt: AppointmentWithClient, patch: UpdateAppointmentInput) => {
+    const previousStatus = apt.status;
+    const previousPaid = apt.isPaid;
     setStatusError(null);
     setUpdatingId(apt.id);
     setAppointments((current) =>
-      current.map((item) => (item.id === apt.id ? { ...item, status } : item))
+      current.map((item) =>
+        item.id === apt.id
+          ? {
+              ...item,
+              status: patch.status ?? item.status,
+              isPaid: patch.isPaid === undefined ? item.isPaid : patch.isPaid ? 1 : 0,
+            }
+          : item
+      )
     );
     try {
-      await updateAppointment(apt.clientId, apt.id, { status });
+      await updateAppointment(apt.clientId, apt.id, patch);
       await loadAppointments(true);
     } catch (error: unknown) {
       setAppointments((current) =>
-        current.map((item) => (item.id === apt.id ? { ...item, status: previous } : item))
+        current.map((item) =>
+          item.id === apt.id ? { ...item, status: previousStatus, isPaid: previousPaid } : item
+        )
       );
       const msg =
         error && typeof error === 'object' && 'response' in error
           ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
           : null;
-      setStatusError(msg || 'Durum kaydedilemedi. Backend yeni kodla açık mı?');
+      setStatusError(msg || 'Durum kaydedilemedi.');
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const handleStatus = (apt: AppointmentWithClient, status: AppointmentStatus) => {
+    void handlePatch(apt, { status });
+  };
+
+  const handlePaid = (apt: AppointmentWithClient, isPaid: boolean) => {
+    void handlePatch(apt, { isPaid });
   };
 
   return (
@@ -102,6 +116,17 @@ export const Today = () => {
       <h1 className="today-title">Bugün</h1>
       <p className="today-subtitle">{headingDate}</p>
       {statusError ? <div className="today-error">{statusError}</div> : null}
+      {!loading && upcoming.length > 0 ? (
+        <div className="today-error" style={{ background: 'rgba(40, 167, 69, 0.12)', color: 'inherit' }}>
+          Yaklaşan seanslar:{' '}
+          {upcoming
+            .map(
+              (apt) =>
+                `${apt.appointmentTime || ''} ${apt.clientName || 'Danışan'}`
+            )
+            .join(' · ')}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="today-loading">Yükleniyor...</div>
@@ -123,8 +148,11 @@ export const Today = () => {
                       <span className="today-time">{apt.appointmentTime || '--:--'}</span>
                       <span className="today-main">
                         <span className="today-name">{apt.clientName || 'İsimsiz'}</span>
-                        {apt.title ? <span className="today-apt-title">{apt.title}</span> : null}
-                        {apt.roomName ? <span className="today-apt-title">{apt.roomName}</span> : null}
+                        <span className="today-apt-title">
+                          {sessionDurationLabel(apt.durationMinutes)}
+                          {apt.title ? ` · ${apt.title}` : ''}
+                          {apt.roomName ? ` · ${apt.roomName}` : ''}
+                        </span>
                       </span>
                       <span className={`today-badge status-${appointmentStatus(apt.status)}`}>
                         {appointmentStatusLabel(apt.status)}
@@ -134,6 +162,14 @@ export const Today = () => {
                       </span>
                     </button>
                     <div className="today-status-actions">
+                      <button
+                        type="button"
+                        className={`today-status-btn ${appointmentStatus(apt.status) === 'scheduled' ? 'active-scheduled' : ''}`}
+                        disabled={updatingId === apt.id}
+                        onClick={() => handleStatus(apt, 'scheduled')}
+                      >
+                        Planlandı
+                      </button>
                       <button
                         type="button"
                         className={`today-status-btn ${appointmentStatus(apt.status) === 'attended' ? 'active-attended' : ''}`}
@@ -157,6 +193,14 @@ export const Today = () => {
                         onClick={() => handleStatus(apt, 'cancelled')}
                       >
                         İptal
+                      </button>
+                      <button
+                        type="button"
+                        className={`today-status-btn ${apt.isPaid ? 'active-paid' : ''}`}
+                        disabled={updatingId === apt.id}
+                        onClick={() => handlePaid(apt, !apt.isPaid)}
+                      >
+                        {apt.isPaid ? 'Ödendi' : 'Ödeme al'}
                       </button>
                     </div>
                     {apt.googleMeetLink ? (
@@ -187,7 +231,7 @@ export const Today = () => {
             ) : (
               <ul className="today-list">
                 {unpaidList.map((apt) => (
-                  <li key={apt.id}>
+                  <li key={apt.id} className="today-item">
                     <button
                       type="button"
                       className="today-row"
@@ -198,8 +242,18 @@ export const Today = () => {
                       <span className="today-main">
                         <span className="today-name">{apt.clientName || 'İsimsiz'}</span>
                       </span>
-                      <span className="today-fee">{formatMoney(apt.agreedFee ?? 0)}</span>
+                      <span className="today-fee">{formatMoney(appointmentAmount(apt))}</span>
                     </button>
+                    <div className="today-status-actions">
+                      <button
+                        type="button"
+                        className="today-status-btn"
+                        disabled={updatingId === apt.id}
+                        onClick={() => handlePaid(apt, true)}
+                      >
+                        Ödendi
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

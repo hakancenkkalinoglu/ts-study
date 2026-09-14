@@ -98,8 +98,86 @@ public class SchemaMigrator implements ApplicationRunner {
         if (!hasColumn("appointments", "roomId")) {
             jdbc.execute("ALTER TABLE appointments ADD COLUMN roomId INTEGER");
         }
+        if (!hasColumn("appointments", "durationMinutes")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN durationMinutes INTEGER");
+        }
+        jdbc.update("UPDATE appointments SET durationMinutes = 50 WHERE durationMinutes IS NULL");
+        if (!hasColumn("appointments", "seriesId")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN seriesId TEXT");
+        }
 
+        if (!hasColumn("app_users", "displayName")) {
+            jdbc.execute("ALTER TABLE app_users ADD COLUMN displayName TEXT");
+        }
+        if (!hasColumn("app_users", "reminderHours")) {
+            jdbc.execute("ALTER TABLE app_users ADD COLUMN reminderHours INTEGER");
+        }
+        jdbc.update("UPDATE app_users SET reminderHours = 24 WHERE reminderHours IS NULL");
+        if (!hasColumn("appointments", "sessionFee")) {
+            jdbc.execute("ALTER TABLE appointments ADD COLUMN sessionFee INTEGER");
+        }
+        if (!hasColumn("client_notes", "fileName")) {
+            jdbc.execute("ALTER TABLE client_notes ADD COLUMN fileName TEXT");
+        }
+
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                  email TEXT NOT NULL,
+                  codeHash TEXT NOT NULL,
+                  expiresAt INTEGER NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_packages (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  clientId INTEGER NOT NULL,
+                  title TEXT NOT NULL,
+                  totalSessions INTEGER NOT NULL,
+                  remainingSessions INTEGER NOT NULL,
+                  prepaidAmount INTEGER NOT NULL DEFAULT 0,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS psych_inventories (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  code TEXT NOT NULL UNIQUE,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  maxScore INTEGER NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS psych_inventory_items (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  inventoryId INTEGER NOT NULL,
+                  sortOrder INTEGER NOT NULL,
+                  prompt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS client_inventory_results (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  clientId INTEGER NOT NULL,
+                  inventoryId INTEGER NOT NULL,
+                  answers TEXT NOT NULL,
+                  score INTEGER NOT NULL,
+                  interpretation TEXT NOT NULL,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
+        jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", System.currentTimeMillis());
     }
 
     private void createCoreTables() {
@@ -146,6 +224,8 @@ public class SchemaMigrator implements ApplicationRunner {
                   googleHtmlLink TEXT,
                   clinicId INTEGER,
                   roomId INTEGER,
+                  durationMinutes INTEGER NOT NULL DEFAULT 50,
+                  seriesId TEXT,
                   createdAt TEXT NOT NULL,
                   updatedAt TEXT NOT NULL
                 )

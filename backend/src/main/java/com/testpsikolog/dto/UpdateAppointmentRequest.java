@@ -6,6 +6,8 @@ public record UpdateAppointmentRequest(
         String title,
         Boolean isPaid,
         String status,
-        Long roomId
+        Long roomId,
+        Integer durationMinutes,
+        Integer sessionFee
 ) {
 }

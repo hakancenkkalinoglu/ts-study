@@ -6,6 +6,7 @@ import com.testpsikolog.dto.GoogleAuthUrlResponse;
 import com.testpsikolog.dto.GoogleStatusResponse;
 import com.testpsikolog.dto.LoginRequest;
 import com.testpsikolog.dto.LoginResponse;
+import com.testpsikolog.dto.MessageResponse;
 import com.testpsikolog.service.AuthService;
 import com.testpsikolog.service.CurrentUserService;
 import com.testpsikolog.service.GoogleCalendarService;
@@ -14,8 +15,10 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -99,5 +102,58 @@ public class AuthController {
     public GoogleStatusResponse googleStatus() {
         long userId = currentUserService.requireUser().id();
         return new GoogleStatusResponse(googleCalendarService.isConnected(userId));
+    }
+
+    @DeleteMapping("/auth/google")
+    public MessageResponse disconnectGoogle() {
+        long userId = currentUserService.requireUser().id();
+        googleCalendarService.disconnect(userId);
+        return new MessageResponse("Google bağlantısı kesildi.");
+    }
+
+    @GetMapping("/auth/me")
+    public com.testpsikolog.dto.ProfileResponse me() {
+        long userId = currentUserService.requireUser().id();
+        return authService.getProfile(userId, googleCalendarService.isConnected(userId));
+    }
+
+    @PutMapping("/auth/me")
+    public com.testpsikolog.dto.ProfileResponse updateMe(@RequestBody com.testpsikolog.dto.UpdateProfileRequest request) {
+        long userId = currentUserService.requireUser().id();
+        return authService.updateProfile(userId, request, googleCalendarService.isConnected(userId));
+    }
+
+    @PutMapping("/auth/password")
+    public MessageResponse changePassword(@RequestBody com.testpsikolog.dto.ChangePasswordRequest request) {
+        long userId = currentUserService.requireUser().id();
+        authService.changePassword(userId, request);
+        return new MessageResponse("Şifre güncellendi.");
+    }
+
+    @PostMapping("/auth/forgot-password")
+    public MessageResponse forgotPassword(@RequestBody com.testpsikolog.dto.ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return new MessageResponse(
+                "Eşleşen bir hesap varsa sıfırlama kodu üretildi. Yerel kurulumda kod backend/data/last-reset-code.txt dosyasına yazılır."
+        );
+    }
+
+    @PostMapping("/auth/reset-password")
+    public MessageResponse resetPassword(@RequestBody com.testpsikolog.dto.ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return new MessageResponse("Şifreniz güncellendi. Yeni şifre ile giriş yapabilirsiniz.");
+    }
+
+    @GetMapping("/auth/export")
+    public java.util.Map<String, Object> exportAccount() {
+        long userId = currentUserService.requireUser().id();
+        return authService.exportAccount(userId);
+    }
+
+    @DeleteMapping("/auth/me")
+    public MessageResponse deleteAccount() {
+        long userId = currentUserService.requireUser().id();
+        authService.deleteAccount(userId);
+        return new MessageResponse("Hesabınız ve kayıtlarınız silindi.");
     }
 }

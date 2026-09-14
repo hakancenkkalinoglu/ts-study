@@ -11,6 +11,11 @@ import type {
   Clinic,
   ClinicRoom,
   UpdateNoteInput,
+  Profile,
+  SessionPackage,
+  InventorySummary,
+  InventoryDetail,
+  InventoryResult,
 } from '../types';
 
 // Relative URL: Vite proxy forwards /api to backend (localhost:3000)
@@ -42,6 +47,7 @@ api.interceptors.response.use(
         !url.includes('/auth/google/exchange')
       ) {
         localStorage.removeItem(TOKEN_KEY);
+        sessionStorage.setItem('session_expired', '1');
         window.location.href = '/';
       }
     }
@@ -66,12 +72,61 @@ export const login = async (
 
 export const register = async (
   email: string,
-  password: string
+  password: string,
+  displayName?: string
 ): Promise<{ token: string; username: string; email?: string }> => {
   const response = await api.post<{ token: string; username: string; email?: string }>('/auth/register', {
     email,
     password,
+    displayName,
   });
+  return response.data;
+};
+
+export const getProfile = async (): Promise<Profile> => {
+  const response = await api.get<Profile>('/auth/me');
+  return response.data;
+};
+
+export const updateProfile = async (data: {
+  displayName?: string;
+  email?: string;
+  reminderHours?: number;
+}): Promise<Profile> => {
+  const response = await api.put<Profile>('/auth/me', data);
+  return response.data;
+};
+
+export const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  await api.put('/auth/password', { currentPassword, newPassword });
+};
+
+export const forgotPassword = async (email: string): Promise<string> => {
+  const response = await api.post<{ message: string }>('/auth/forgot-password', { email });
+  return response.data.message;
+};
+
+export const resetPassword = async (email: string, code: string, newPassword: string): Promise<string> => {
+  const response = await api.post<{ message: string }>('/auth/reset-password', { email, code, newPassword });
+  return response.data.message;
+};
+
+export const disconnectGoogle = async (): Promise<void> => {
+  await api.delete('/auth/google');
+};
+
+export const exportAccount = async (): Promise<Record<string, unknown>> => {
+  const response = await api.get<Record<string, unknown>>('/auth/export');
+  return response.data;
+};
+
+export const deleteAccount = async (): Promise<void> => {
+  await api.delete('/auth/me');
+};
+
+export const getUpcomingAppointments = async (hours?: number): Promise<AppointmentWithClient[]> => {
+  const params = hours ? { hours } : {};
+  const response = await api.get<AppointmentWithClient[]>('/appointments/upcoming', { params });
   return response.data;
 };
 
@@ -88,6 +143,11 @@ export const exchangeGoogleAuth = async (
 export const getClients = async (search?: string): Promise<Client[]> => {
   const params = search?.trim() ? { search: search.trim() } : {};
   const response = await api.get<Client[]>('/clients', { params });
+  return response.data;
+};
+
+export const getClient = async (id: number): Promise<Client> => {
+  const response = await api.get<Client>(`/clients/${id}`);
   return response.data;
 };
 
@@ -151,9 +211,15 @@ export const getAppointments = async (clientId: number): Promise<Appointment[]> 
 
 export const createAppointment = async (
   data: CreateAppointmentInput
-): Promise<{ id: number; googleMeetLink?: string | null; googleHtmlLink?: string | null }> => {
+): Promise<{
+  id: number;
+  createdCount?: number;
+  googleMeetLink?: string | null;
+  googleHtmlLink?: string | null;
+}> => {
   const response = await api.post<{
     id: number;
+    createdCount?: number;
     googleMeetLink?: string | null;
     googleHtmlLink?: string | null;
   }>(`/clients/${data.clientId}/appointments`, data);
@@ -241,6 +307,95 @@ export const updateClinicRoom = async (
 
 export const deleteClinicRoom = async (roomId: number): Promise<void> => {
   await api.delete(`/clinic/rooms/${roomId}`);
+};
+
+export const renameClinic = async (name: string): Promise<Clinic> => {
+  const response = await api.put<Clinic>('/clinic', { name });
+  return response.data;
+};
+
+export const rotateClinicInvite = async (): Promise<Clinic> => {
+  const response = await api.post<Clinic>('/clinic/invite/rotate');
+  return response.data;
+};
+
+export const kickClinicMember = async (memberUserId: number): Promise<Clinic> => {
+  const response = await api.delete<Clinic>(`/clinic/members/${memberUserId}`);
+  return response.data;
+};
+
+export const transferClinicOwnership = async (userId: number): Promise<Clinic> => {
+  const response = await api.post<Clinic>('/clinic/transfer', { userId });
+  return response.data;
+};
+
+export const getClientPackages = async (clientId: number): Promise<SessionPackage[]> => {
+  const response = await api.get<SessionPackage[]>(`/clients/${clientId}/packages`);
+  return response.data;
+};
+
+export const createClientPackage = async (
+  clientId: number,
+  data: { title: string; totalSessions: number; prepaidAmount?: number }
+): Promise<SessionPackage> => {
+  const response = await api.post<SessionPackage>(`/clients/${clientId}/packages`, data);
+  return response.data;
+};
+
+export const consumeClientPackage = async (clientId: number, packageId: number): Promise<SessionPackage> => {
+  const response = await api.post<SessionPackage>(`/clients/${clientId}/packages/${packageId}/consume`);
+  return response.data;
+};
+
+export const deleteClientPackage = async (clientId: number, packageId: number): Promise<void> => {
+  await api.delete(`/clients/${clientId}/packages/${packageId}`);
+};
+
+export const listInventories = async (): Promise<InventorySummary[]> => {
+  const response = await api.get<InventorySummary[]>('/inventories');
+  return response.data;
+};
+
+export const getInventory = async (inventoryId: number): Promise<InventoryDetail> => {
+  const response = await api.get<InventoryDetail>(`/inventories/${inventoryId}`);
+  return response.data;
+};
+
+export const getClientInventoryResults = async (clientId: number): Promise<InventoryResult[]> => {
+  const response = await api.get<InventoryResult[]>(`/clients/${clientId}/inventories`);
+  return response.data;
+};
+
+export const submitClientInventory = async (
+  clientId: number,
+  inventoryId: number,
+  answers: number[]
+): Promise<InventoryResult> => {
+  const response = await api.post<InventoryResult>(`/clients/${clientId}/inventories/${inventoryId}`, { answers });
+  return response.data;
+};
+
+export const attachNoteFile = async (clientId: number, noteId: number, file: File): Promise<Note> => {
+  const body = new FormData();
+  body.append('file', file);
+  const response = await api.post<Note>(`/clients/${clientId}/notes/${noteId}/file`, body, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const downloadNoteFile = async (clientId: number, noteId: number, fileName?: string | null): Promise<void> => {
+  const response = await api.get(`/clients/${clientId}/notes/${noteId}/file`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName || 'ek';
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+export const deleteNoteFile = async (clientId: number, noteId: number): Promise<void> => {
+  await api.delete(`/clients/${clientId}/notes/${noteId}/file`);
 };
 
 export const apiErrorMessage = (error: unknown, fallback: string): string => {

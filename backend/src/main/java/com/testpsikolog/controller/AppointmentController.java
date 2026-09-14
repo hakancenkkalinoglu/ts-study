@@ -54,6 +54,13 @@ public class AppointmentController {
         this.authService = authService;
     }
 
+    @GetMapping("/appointments/upcoming")
+    public List<AppointmentResponse> getUpcoming(@RequestParam(value = "hours", required = false) Integer hours) {
+        long userId = currentUserService.requireUser().id();
+        int window = hours == null ? 24 : hours;
+        return appointmentService.getUpcoming(userId, window);
+    }
+
     @GetMapping("/appointments")
     public List<AppointmentResponse> getAllAppointments(@RequestParam(value = "scope", required = false) String scope) {
         long userId = currentUserService.requireUser().id();
@@ -80,7 +87,9 @@ public class AppointmentController {
         if (appointment == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Randevu bulunamadı.");
         }
-        int duration = body != null && body.durationMinutes() != null ? body.durationMinutes() : 60;
+        int duration = body != null && body.durationMinutes() != null
+                ? body.durationMinutes()
+                : appointment.durationMinutes();
         String psychologistEmail = authService.requireEmail(userId);
         MeetResponse result = googleCalendarService.createCalendarEventWithMeet(userId, appointment, duration, psychologistEmail);
         appointmentService.updateGoogleFields(userId, appointmentId, result.eventId(), result.meetLink(), result.htmlLink());
@@ -100,28 +109,40 @@ public class AppointmentController {
             @RequestBody CreateAppointmentRequest body
     ) {
         long userId = currentUserService.requireUser().id();
-        long id = appointmentService.create(userId, clientId, body);
+        List<Long> ids = appointmentService.create(userId, clientId, body);
+        long id = ids.isEmpty() ? 0L : ids.get(0);
         String googleMeetLink = null;
         String googleHtmlLink = null;
         if (googleCalendarService.isConnected(userId)) {
-            try {
-                AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, id);
-                if (appointment != null) {
+            for (Long createdId : ids) {
+                try {
+                    AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, createdId);
+                    if (appointment == null) {
+                        continue;
+                    }
                     MeetResponse result = googleCalendarService.createCalendarEventWithMeet(
                             userId,
                             appointment,
-                            60,
+                            appointment.durationMinutes(),
                             authService.requireEmail(userId)
                     );
-                    appointmentService.updateGoogleFields(userId, id, result.eventId(), result.meetLink(), result.htmlLink());
-                    googleMeetLink = result.meetLink();
-                    googleHtmlLink = result.htmlLink();
+                    appointmentService.updateGoogleFields(
+                            userId,
+                            createdId,
+                            result.eventId(),
+                            result.meetLink(),
+                            result.htmlLink()
+                    );
+                    if (createdId == id) {
+                        googleMeetLink = result.meetLink();
+                        googleHtmlLink = result.htmlLink();
+                    }
+                } catch (Exception googleErr) {
+                    System.out.println("Google Calendar event create failed: " + googleErr.getMessage());
                 }
-            } catch (Exception googleErr) {
-                System.out.println("Google Calendar event create failed: " + googleErr.getMessage());
             }
         }
-        return new CreateAppointmentResponse(id, googleMeetLink, googleHtmlLink);
+        return new CreateAppointmentResponse(id, ids.size(), googleMeetLink, googleHtmlLink);
     }
 
     @PutMapping("/clients/{clientId}/appointments/{appointmentId}")
@@ -138,8 +159,16 @@ public class AppointmentController {
         AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, appointmentId);
         if (appointment != null
                 && appointment.googleEventId() != null
-                && (body.appointmentDate() != null || body.appointmentTime() != null || body.title() != null)) {
-            googleCalendarService.updateCalendarEvent(userId, appointment.googleEventId(), appointment, 60);
+                && (body.appointmentDate() != null
+                        || body.appointmentTime() != null
+                        || body.title() != null
+                        || body.durationMinutes() != null)) {
+            googleCalendarService.updateCalendarEvent(
+                    userId,
+                    appointment.googleEventId(),
+                    appointment,
+                    appointment.durationMinutes()
+            );
         }
         return new UpdatedResponse(updated);
     }

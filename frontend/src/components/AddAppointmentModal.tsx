@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { apiErrorMessage, createAppointment, getAppointmentById, getClients, getClinicRooms } from '../services/api';
 import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
+import { REPEAT_COUNTS, SESSION_DURATIONS, sessionDuration } from '../types';
+import { istanbulTodayYmd } from '../utils/dates';
 import './AddClientModal.css';
 import './AddAppointmentModal.css';
 
@@ -36,10 +38,12 @@ export const AddAppointmentModal = ({
   const [formData, setFormData] = useState({
     clientId: 0,
     selectedClientName: '',
-    appointmentDate: initialDate || new Date().toISOString().split('T')[0],
+    appointmentDate: initialDate || istanbulTodayYmd(),
     appointmentTime: initialTime || '09:00',
     title: '',
     roomId: 0,
+    durationMinutes: 50,
+    repeatCount: 1,
   });
   const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,7 +106,7 @@ export const AddAppointmentModal = ({
     setFormData((prev) => ({
       ...prev,
       clientId: client.id,
-      selectedClientName: client.name || client.email,
+      selectedClientName: client.name || client.email || 'İsimsiz',
     }));
     setSearchTerm('');
     setDropdownOpen(false);
@@ -116,6 +120,15 @@ export const AddAppointmentModal = ({
     }));
     setSearchTerm('');
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -135,15 +148,19 @@ export const AddAppointmentModal = ({
         appointmentTime: formData.appointmentTime,
         title: formData.title || undefined,
         roomId: formData.roomId || undefined,
+        durationMinutes: sessionDuration(formData.durationMinutes),
+        repeatCount: formData.repeatCount,
       });
       const createdAppointment = await getAppointmentById(result.id);
       setFormData({
         clientId: 0,
         selectedClientName: '',
-        appointmentDate: new Date().toISOString().split('T')[0],
+        appointmentDate: istanbulTodayYmd(),
         appointmentTime: '09:00',
         title: '',
         roomId: 0,
+        durationMinutes: 50,
+        repeatCount: 1,
       });
       setSearchTerm('');
       onSuccess(createdAppointment);
@@ -157,10 +174,10 @@ export const AddAppointmentModal = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-apt-title" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Yeni Randevu Ekle</h2>
-          <button className="close-button" onClick={onClose}>
+          <h2 id="add-apt-title">Yeni Randevu Ekle</h2>
+          <button className="close-button" onClick={onClose} aria-label="Kapat">
             ×
           </button>
         </div>
@@ -213,7 +230,7 @@ export const AddAppointmentModal = ({
                             className="client-dropdown-item"
                             onClick={() => handleSelectClient(c)}
                           >
-                            {c.name || c.email}
+                            {c.name || c.email || 'İsimsiz'}
                             {c.email && c.name && (
                               <span className="client-email">{c.email}</span>
                             )}
@@ -250,6 +267,39 @@ export const AddAppointmentModal = ({
               }
             />
           </div>
+          <div className="form-group">
+            <label htmlFor="durationMinutes">Süre *</label>
+            <select
+              id="durationMinutes"
+              value={formData.durationMinutes}
+              onChange={(e) =>
+                setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
+              }
+            >
+              {SESSION_DURATIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="repeatCount">Tekrar</label>
+            <select
+              id="repeatCount"
+              value={formData.repeatCount}
+              onChange={(e) => setFormData({ ...formData, repeatCount: Number(e.target.value) })}
+            >
+              {REPEAT_COUNTS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {formData.repeatCount > 1 ? (
+              <p className="meet-hint">Aynı gün ve saatte haftalık seanslar açılır. Bir seans çakışırsa hiçbiri kaydedilmez.</p>
+            ) : null}
+          </div>
           {rooms.length > 0 ? (
             <div className="form-group">
               <label htmlFor="roomId">Oda</label>
@@ -285,7 +335,11 @@ export const AddAppointmentModal = ({
               İptal
             </button>
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Ekleniyor...' : 'Ekle'}
+              {loading
+                ? 'Ekleniyor...'
+                : formData.repeatCount > 1
+                  ? `${formData.repeatCount} seans ekle`
+                  : 'Ekle'}
             </button>
           </div>
         </form>

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllAppointments, updateAppointment } from '../services/api';
+import { getAllAppointments, updateAppointment, apiErrorMessage } from '../services/api';
 import type { AppointmentWithClient } from '../types';
-import { appointmentStatus, appointmentStatusLabel } from '../types';
+import { appointmentAmount, appointmentStatus, appointmentStatusLabel } from '../types';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import './Payments.css';
@@ -35,7 +35,9 @@ export const Payments = () => {
   const pendingAppointments = appointments.filter(
     (apt) => !(apt.isPaid ?? 0) && appointmentStatus(apt.status) !== 'cancelled'
   );
-  const completedAppointments = appointments.filter((apt) => apt.isPaid ?? 0);
+  const completedAppointments = appointments.filter(
+    (apt) => Boolean(apt.isPaid) && appointmentStatus(apt.status) !== 'cancelled'
+  );
 
   const handleTogglePayment = async (apt: AppointmentWithClient) => {
     try {
@@ -46,7 +48,7 @@ export const Payments = () => {
       loadAppointments();
     } catch (error) {
       console.error('Error updating payment status:', error);
-      alert('Ödeme durumu güncellenirken bir hata oluştu.');
+      alert(apiErrorMessage(error, 'Ödeme durumu güncellenirken bir hata oluştu.'));
     } finally {
       setUpdatingId(null);
     }
@@ -110,8 +112,9 @@ export const Payments = () => {
                   <th>Saat</th>
                   <th>Danışan</th>
                   <th>Başlık</th>
-                  <th>Seans</th>
-                  <th>Durum</th>
+                  <th>Tutar</th>
+                  <th>Randevu</th>
+                  <th>Ödeme</th>
                   <th>İşlem</th>
                 </tr>
               </thead>
@@ -130,6 +133,7 @@ export const Payments = () => {
                       </button>
                     </td>
                     <td>{apt.title || '-'}</td>
+                    <td>{appointmentAmount(apt).toLocaleString('tr-TR')} ₺</td>
                     <td>{appointmentStatusLabel(apt.status)}</td>
                     <td>
                       <span className={`status-badge ${apt.isPaid ? 'paid' : 'unpaid'}`}>

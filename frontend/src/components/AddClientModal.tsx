@@ -1,5 +1,5 @@
-import { useState, FormEvent } from 'react';
-import { createClient } from '../services/api';
+import { useEffect, useState, type FormEvent } from 'react';
+import { apiErrorMessage, createClient } from '../services/api';
 import './AddClientModal.css';
 
 interface AddClientModalProps {
@@ -21,22 +21,35 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!formData.name.trim()) {
+      setError('Ad soyad zorunludur.');
+      return;
+    }
     setLoading(true);
 
     try {
       await createClient({
-        email: formData.email,
-        name: formData.name || undefined,
+        name: formData.name.trim(),
+        email: formData.email.trim() || undefined,
         birthDate: formData.birthDate || undefined,
         agreedFee: formData.agreedFee,
-        phone: formData.phone || undefined,
-        emergencyName: formData.emergencyName || undefined,
-        emergencyPhone: formData.emergencyPhone || undefined,
+        phone: formData.phone.trim() || undefined,
+        emergencyName: formData.emergencyName.trim() || undefined,
+        emergencyPhone: formData.emergencyPhone.trim() || undefined,
       });
       onSuccess();
       setFormData({
@@ -50,7 +63,7 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
       });
       onClose();
     } catch (err) {
-      setError('Danışan eklenirken bir hata oluştu.');
+      setError(apiErrorMessage(err, 'Danışan eklenirken bir hata oluştu.'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -59,29 +72,29 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-client-title" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Yeni Danışan Ekle</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <h2 id="add-client-title">Yeni Danışan Ekle</h2>
+          <button className="close-button" onClick={onClose} aria-label="Kapat">×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="email">E-posta *</label>
-            <input
-              type="email"
-              id="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="name">Ad Soyad</label>
+            <label htmlFor="name">Ad Soyad *</label>
             <input
               type="text"
               id="name"
+              required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="email">E-posta</label>
+            <input
+              type="email"
+              id="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             />
           </div>
           <div className="form-group">

@@ -142,3 +142,26 @@
 .login-switch:hover {
   text-decoration: underline;
 }
+
+.login-info {
+  color: #1e7a46;
+  background: rgba(40, 167, 69, 0.12);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.login-kvkk {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+  .login-page {
+    padding: 16px;
+  }
+}

@@ -20,7 +20,7 @@ import { getAllAppointments, getMyClinic } from '../services/api';
 import type { AppointmentWithClient, Clinic } from '../types';
 import { AddAppointmentModal } from '../components/AddAppointmentModal';
 import { UpdateAppointmentModal } from '../components/UpdateAppointmentModal';
-import { appointmentStatus, therapistColor } from '../types';
+import { appointmentStatus, sessionDuration, therapistColor } from '../types';
 import './Calendar.css';
 import '../components/AddClientModal.css';
 
@@ -74,13 +74,15 @@ const readCalendarState = (): StoredCalendarState | null => {
 const GRID_START_HOUR = 7;
 const GRID_END_HOUR = 23;
 const HOUR_PX = 72;
-const SLOT_MINUTES = 60;
 
 const parseTimeMinutes = (time: string | null) => {
   const part = (time || '09:00').slice(0, 5);
   const [hour, minute] = part.split(':').map(Number);
   return (hour || 0) * 60 + (minute || 0);
 };
+
+const appointmentEndMinutes = (apt: AppointmentWithClient) =>
+  parseTimeMinutes(apt.appointmentTime) + sessionDuration(apt.durationMinutes);
 
 const formatHourLabel = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 
@@ -89,7 +91,7 @@ const resolveGridRange = (apts: AppointmentWithClient[]) => {
   let endMinutes = GRID_END_HOUR * 60;
   for (const apt of apts) {
     const start = parseTimeMinutes(apt.appointmentTime);
-    const end = start + SLOT_MINUTES;
+    const end = appointmentEndMinutes(apt);
     startMinutes = Math.min(startMinutes, Math.floor(start / 60) * 60);
     endMinutes = Math.max(endMinutes, Math.ceil(end / 60) * 60);
   }
@@ -108,7 +110,7 @@ const layoutDayAppointments = (apts: AppointmentWithClient[]): LaidOutAppointmen
   const items: LaidOutAppointment[] = apts
     .map((apt) => {
       const start = parseTimeMinutes(apt.appointmentTime);
-      return { apt, start, end: start + SLOT_MINUTES, col: 0, cols: 1 };
+      return { apt, start, end: appointmentEndMinutes(apt), col: 0, cols: 1 };
     })
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -461,7 +463,7 @@ export const Calendar = () => {
                       className={`calendar-apt-card tiny status-${appointmentStatus(apt.status)} ${apt.mine === false ? 'not-mine' : ''}`}
                       style={cardStyle(apt)}
                       onClick={(e) => openUpdateModal(apt, e)}
-                      title={`${formatTime(apt.appointmentTime)} · ${clinicSafeLabel(apt)}${apt.mine === false ? '' : apt.title ? ` - ${apt.title}` : ''}`}
+                      title={`${formatTime(apt.appointmentTime)} · ${sessionDuration(apt.durationMinutes)} dk · ${clinicSafeLabel(apt)}${apt.mine === false ? '' : apt.title ? ` - ${apt.title}` : ''}`}
                     >
                       <span className="apt-time-tiny">{formatTime(apt.appointmentTime)}</span>
                       {clinicSafeLabel(apt)}

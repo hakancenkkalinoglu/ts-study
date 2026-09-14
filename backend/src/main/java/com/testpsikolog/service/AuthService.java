@@ -6,6 +6,7 @@ import com.testpsikolog.dto.LoginResponse;
 import com.testpsikolog.security.AuthUser;
 import com.testpsikolog.security.JwtService;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,17 +21,20 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AppProperties appProperties;
+    private final ClientService clientService;
 
     public AuthService(
             JdbcTemplate jdbc,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            AppProperties appProperties
+            AppProperties appProperties,
+            ClientService clientService
     ) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.appProperties = appProperties;
+        this.clientService = clientService;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -67,12 +71,19 @@ public class AuthService {
         if (findByLogin(email) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu e-posta ile kayıtlı bir hesap var.");
         }
+        String displayName = request.displayName() == null || request.displayName().isBlank()
+                ? email
+                : request.displayName().trim();
+        if (displayName.length() > 80) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Görünen ad en fazla 80 karakter olabilir.");
+        }
         String hash = passwordEncoder.encode(request.password());
         jdbc.update(
-                "INSERT INTO app_users (username, email, passwordHash) VALUES (?, ?, ?)",
+                "INSERT INTO app_users (username, email, passwordHash, displayName, reminderHours) VALUES (?, ?, ?, ?, 24)",
                 email,
                 email,
-                hash
+                hash,
+                displayName
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         if (id == null) {
@@ -92,10 +103,11 @@ public class AuthService {
         }
         String hash = passwordEncoder.encode(UUID.randomUUID().toString());
         jdbc.update(
-                "INSERT INTO app_users (username, email, passwordHash) VALUES (?, ?, ?)",
+                "INSERT INTO app_users (username, email, passwordHash, displayName, reminderHours) VALUES (?, ?, ?, ?, 24)",
                 email,
                 email,
-                hash
+                hash,
+                email
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         if (id == null) {
@@ -202,6 +214,203 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz.");
         }
         return new LoginResponse(token, user.username(), user.email());
+    }
+
+    public com.testpsikolog.dto.ProfileResponse getProfile(long userId, boolean googleConnected) {
+        return jdbc.query(
+                "SELECT id, email, username, displayName, reminderHours FROM app_users WHERE id = ?",
+                rs -> {
+                    if (!rs.next()) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Hesap bulunamadı.");
+                    }
+                    Integer hours = rs.getObject("reminderHours") == null ? 24 : rs.getInt("reminderHours");
+                    String displayName = rs.getString("displayName");
+                    if (displayName == null || displayName.isBlank()) {
+                        displayName = coalesce(rs.getString("email"), rs.getString("username"));
+                    }
+                    return new com.testpsikolog.dto.ProfileResponse(
+                            rs.getLong("id"),
+                            rs.getString("email"),
+                            rs.getString("username"),
+                            displayName,
+                            googleConnected,
+                            hours
+                    );
+                },
+                userId
+        );
+    }
+
+    public com.testpsikolog.dto.ProfileResponse updateProfile(
+            long userId,
+            com.testpsikolog.dto.UpdateProfileRequest request,
+            boolean googleConnected
+    ) {
+        if (request == null) {
+            return getProfile(userId, googleConnected);
+        }
+        if (request.displayName() != null) {
+            String name = request.displayName().trim();
+            if (name.isBlank() || name.length() > 80) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Görünen ad 1-80 karakter olmalı.");
+            }
+            jdbc.update("UPDATE app_users SET displayName = ? WHERE id = ?", name, userId);
+        }
+        if (request.email() != null) {
+            String email = request.email().trim().toLowerCase();
+            if (!email.contains("@") || email.length() > 120) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
+            }
+            AuthUser existing = findByLogin(email);
+            if (existing != null && existing.id() != null && existing.id() != userId) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu e-posta başka bir hesaba ait.");
+            }
+            jdbc.update("UPDATE app_users SET email = ? WHERE id = ?", email, userId);
+        }
+        if (request.reminderHours() != null) {
+            int hours = request.reminderHours();
+            if (hours != 2 && hours != 12 && hours != 24 && hours != 48) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hatırlatma 2, 12, 24 veya 48 saat olabilir.");
+            }
+            jdbc.update("UPDATE app_users SET reminderHours = ? WHERE id = ?", hours, userId);
+        }
+        return getProfile(userId, googleConnected);
+    }
+
+    public void changePassword(long userId, com.testpsikolog.dto.ChangePasswordRequest request) {
+        if (request == null || request.currentPassword() == null || request.newPassword() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mevcut ve yeni şifre gerekli.");
+        }
+        if (request.newPassword().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Şifre en az 6 karakter olmalı.");
+        }
+        String hash = jdbc.query(
+                "SELECT passwordHash FROM app_users WHERE id = ?",
+                rs -> rs.next() ? rs.getString("passwordHash") : null,
+                userId
+        );
+        if (hash == null || !passwordEncoder.matches(request.currentPassword(), hash)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mevcut şifre hatalı.");
+        }
+        jdbc.update("UPDATE app_users SET passwordHash = ? WHERE id = ?", passwordEncoder.encode(request.newPassword()), userId);
+    }
+
+    public void forgotPassword(com.testpsikolog.dto.ForgotPasswordRequest request) {
+        String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase();
+        if (email.isBlank() || !email.contains("@")) {
+            return;
+        }
+        AuthUser user = findByLogin(email);
+        if (user == null) {
+            return;
+        }
+        jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email);
+        String code = String.format("%06d", new java.security.SecureRandom().nextInt(1_000_000));
+        long expiresAt = java.time.Instant.now().plusSeconds(30 * 60).toEpochMilli();
+        jdbc.update(
+                "INSERT INTO password_reset_tokens (email, codeHash, expiresAt) VALUES (?, ?, ?)",
+                email,
+                passwordEncoder.encode(code),
+                expiresAt
+        );
+        try {
+            java.nio.file.Path file = java.nio.file.Path.of(System.getProperty("user.dir"), "data", "last-reset-code.txt");
+            java.nio.file.Files.createDirectories(file.getParent());
+            java.nio.file.Files.writeString(file, "email=" + email + System.lineSeparator() + "code=" + code + System.lineSeparator());
+        } catch (Exception ex) {
+            System.out.println("Password reset code file could not be written.");
+        }
+        System.out.println("Password reset code created.");
+    }
+
+    public void resetPassword(com.testpsikolog.dto.ResetPasswordRequest request) {
+        if (request == null || request.email() == null || request.code() == null || request.newPassword() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-posta, kod ve yeni şifre gerekli.");
+        }
+        if (request.newPassword().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Şifre en az 6 karakter olmalı.");
+        }
+        String email = request.email().trim().toLowerCase();
+        jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", java.time.Instant.now().toEpochMilli());
+        String storedHash = jdbc.query(
+                "SELECT codeHash FROM password_reset_tokens WHERE email = ? ORDER BY expiresAt DESC LIMIT 1",
+                rs -> rs.next() ? rs.getString("codeHash") : null,
+                email
+        );
+        if (storedHash == null || !passwordEncoder.matches(request.code().trim(), storedHash)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kod geçersiz veya süresi doldu.");
+        }
+        AuthUser user = findByLogin(email);
+        if (user == null || user.id() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kod geçersiz veya süresi doldu.");
+        }
+        jdbc.update("UPDATE app_users SET passwordHash = ? WHERE id = ?", passwordEncoder.encode(request.newPassword()), user.id());
+        jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email);
+    }
+
+    public java.util.Map<String, Object> exportAccount(long userId) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("profile", getProfile(userId, false));
+        payload.put("clients", jdbc.queryForList("SELECT id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt FROM clients WHERE userId = ?", userId));
+        payload.put(
+                "appointments",
+                jdbc.queryForList(
+                        """
+                        SELECT a.id, a.clientId, a.appointmentDate, a.appointmentTime, a.title, a.isPaid, a.status,
+                               a.durationMinutes, a.sessionFee, a.createdAt
+                        FROM appointments a
+                        INNER JOIN clients c ON c.id = a.clientId
+                        WHERE c.userId = ?
+                        """,
+                        userId
+                )
+        );
+        payload.put(
+                "notes",
+                jdbc.queryForList(
+                        """
+                        SELECT n.id, n.clientId, n.appointmentId, n.title, n.content, n.fileName, n.noteDate, n.createdAt
+                        FROM client_notes n
+                        INNER JOIN clients c ON c.id = n.clientId
+                        WHERE c.userId = ?
+                        """,
+                        userId
+                )
+        );
+        payload.put("exportedAt", java.time.Instant.now().toString());
+        return payload;
+    }
+
+    public void deleteAccount(long userId) {
+        Long clinicId = jdbc.query(
+                "SELECT clinicId FROM clinic_members WHERE userId = ? AND role = 'owner'",
+                rs -> rs.next() ? rs.getLong("clinicId") : null,
+                userId
+        );
+        if (clinicId != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Kurucu olduğunuz bir klinik var. Önce sahipliği devredin veya kliniği silin."
+            );
+        }
+        List<Long> clientIds = jdbc.query(
+                "SELECT id FROM clients WHERE userId = ?",
+                (rs, rowNum) -> rs.getLong("id"),
+                userId
+        );
+        for (Long clientId : clientIds) {
+            clientService.delete(userId, clientId);
+        }
+        jdbc.update("DELETE FROM clinic_members WHERE userId = ?", userId);
+        jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
+        jdbc.update("DELETE FROM app_users WHERE id = ?", userId);
+    }
+
+    private static String coalesce(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 
     private LoginResponse toResponse(AuthUser user) {

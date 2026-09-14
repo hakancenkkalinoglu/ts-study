@@ -22,6 +22,9 @@ public record AppointmentResponse(
         String roomColor,
         Long therapistUserId,
         String therapistName,
+        int durationMinutes,
+        String seriesId,
+        Integer sessionFee,
         boolean mine
 ) {
 }

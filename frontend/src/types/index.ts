@@ -1,6 +1,6 @@
 export type Client = {
   id: number;
-  email: string;
+  email: string | null;
   name: string | null;
   birthDate: string | null;
   agreedFee: number | null;
@@ -12,8 +12,8 @@ export type Client = {
 };
 
 export type CreateClientInput = {
-  email: string;
-  name?: string;
+  name: string;
+  email?: string;
   birthDate?: string;
   agreedFee?: number;
   password?: string;
@@ -45,6 +45,30 @@ export const appointmentStatusLabel = (value?: string | null): string => {
   return APPOINTMENT_STATUSES.find((item) => item.value === status)?.label ?? 'Planlandı';
 };
 
+export const SESSION_DURATIONS: { value: number; label: string }[] = [
+  { value: 45, label: '45 dk' },
+  { value: 50, label: '50 dk' },
+  { value: 60, label: '60 dk' },
+  { value: 90, label: '90 dk' },
+];
+
+export const sessionDuration = (value?: number | null): number => {
+  if (value === 45 || value === 50 || value === 60 || value === 90) {
+    return value;
+  }
+  return 50;
+};
+
+export const sessionDurationLabel = (value?: number | null): string => `${sessionDuration(value)} dk`;
+
+export const REPEAT_COUNTS: { value: number; label: string }[] = [
+  { value: 1, label: 'Tek seans' },
+  { value: 4, label: 'Haftalık · 4 seans' },
+  { value: 8, label: 'Haftalık · 8 seans' },
+  { value: 10, label: 'Haftalık · 10 seans' },
+  { value: 12, label: 'Haftalık · 12 seans' },
+];
+
 export type Appointment = {
   id: number;
   clientId: number;
@@ -65,6 +89,9 @@ export type Appointment = {
   therapistUserId?: number | null;
   therapistName?: string | null;
   mine?: boolean;
+  durationMinutes?: number | null;
+  seriesId?: string | null;
+  sessionFee?: number | null;
 };
 
 export type AppointmentWithClient = Appointment & {
@@ -80,6 +107,9 @@ export type CreateAppointmentInput = {
   title?: string;
   isPaid?: boolean;
   roomId?: number;
+  durationMinutes?: number;
+  repeatCount?: number;
+  sessionFee?: number;
 };
 
 export type UpdateAppointmentInput = {
@@ -89,6 +119,8 @@ export type UpdateAppointmentInput = {
   isPaid?: boolean;
   status?: AppointmentStatus;
   roomId?: number;
+  durationMinutes?: number;
+  sessionFee?: number;
 };
 
 export type ClinicMember = {
@@ -120,15 +152,74 @@ export const therapistColor = (userId?: number | null): string | undefined => {
   return THERAPIST_COLORS[Math.abs(userId) % THERAPIST_COLORS.length];
 };
 
+export const appointmentAmount = (apt: {
+  sessionFee?: number | null;
+  agreedFee?: number | null;
+}): number => apt.sessionFee ?? apt.agreedFee ?? 0;
+
 export type Note = {
   id: number;
   clientId: number;
   appointmentId: number | null;
   title: string | null;
   content: string;
+  fileName?: string | null;
   noteDate: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type Profile = {
+  id: number;
+  email: string | null;
+  username: string;
+  displayName: string;
+  googleConnected: boolean;
+  reminderHours: number;
+};
+
+export type SessionPackage = {
+  id: number;
+  clientId: number;
+  title: string;
+  totalSessions: number;
+  remainingSessions: number;
+  prepaidAmount: number;
+  createdAt: string;
+};
+
+export type InventorySummary = {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  maxScore: number;
+  itemCount: number;
+};
+
+export type InventoryItem = {
+  id: number;
+  sortOrder: number;
+  prompt: string;
+};
+
+export type InventoryDetail = {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  maxScore: number;
+  items: InventoryItem[];
+};
+
+export type InventoryResult = {
+  id: number;
+  inventoryId: number;
+  inventoryName: string;
+  score: number;
+  maxScore: number;
+  interpretation: string;
+  createdAt: string;
 };
 
 export type CreateNoteInput = {

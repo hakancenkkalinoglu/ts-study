@@ -6,7 +6,7 @@ public record NoteResponse(
         Long appointmentId,
         String title,
         String content,
-        String filePath,
+        String fileName,
         String noteDate,
         String createdAt,
         String updatedAt

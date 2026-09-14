@@ -8,6 +8,8 @@ import com.testpsikolog.dto.CreateRoomRequest;
 import com.testpsikolog.dto.DeletedResponse;
 import com.testpsikolog.dto.JoinClinicRequest;
 import com.testpsikolog.dto.MessageResponse;
+import com.testpsikolog.dto.TransferOwnerRequest;
+import com.testpsikolog.dto.UpdateClinicRequest;
 import com.testpsikolog.dto.UpdateRoomRequest;
 import com.testpsikolog.service.ClinicService;
 import com.testpsikolog.service.CurrentUserService;
@@ -72,6 +74,30 @@ public class ClinicController {
         long userId = currentUserService.requireUser().id();
         clinicService.deleteClinic(userId);
         return new DeletedResponse(1);
+    }
+
+    @PutMapping("/clinic")
+    public ClinicResponse rename(@RequestBody UpdateClinicRequest request) {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.rename(userId, request);
+    }
+
+    @PostMapping("/clinic/invite/rotate")
+    public ClinicResponse rotateInvite() {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.rotateInvite(userId);
+    }
+
+    @DeleteMapping("/clinic/members/{memberUserId}")
+    public ClinicResponse kickMember(@PathVariable long memberUserId) {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.kickMember(userId, memberUserId);
+    }
+
+    @PostMapping("/clinic/transfer")
+    public ClinicResponse transfer(@RequestBody TransferOwnerRequest request) {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.transferOwnership(userId, request);
     }
 
     @PostMapping("/clinic/rooms")

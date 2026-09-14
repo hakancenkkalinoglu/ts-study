@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
-import { appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
+import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -157,7 +157,7 @@ export const Reports = () => {
     };
   });
 
-  const fee = (a: AppointmentWithClient) => a.agreedFee ?? 0;
+  const fee = (a: AppointmentWithClient) => appointmentAmount(a);
 
   const paidThisMonth = appointmentsThisMonth.filter((a) => appointmentPaid(a.isPaid));
   const pendingThisMonth = appointmentsThisMonth.filter(
@@ -367,7 +367,7 @@ export const Reports = () => {
               ))}
             </ul>
           )}
-          <span className="report-card-meta">İptaller hariç · tik değişince burası değişir · {monthLabel}</span>
+          <span className="report-card-meta">İptaller hariç · ödeme işareti değişince güncellenir · {monthLabel}</span>
         </div>
 
         <div className="report-card">

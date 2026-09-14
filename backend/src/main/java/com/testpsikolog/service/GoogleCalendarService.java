@@ -18,6 +18,7 @@ import com.google.api.services.calendar.model.CreateConferenceRequest;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
+import com.google.api.services.calendar.model.EventReminder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.testpsikolog.config.AppProperties;
@@ -120,13 +121,6 @@ public class GoogleCalendarService {
 
     public MeetResponse createCalendarEventWithMeet(long userId, AppointmentResponse appointment, int durationMinutes, String psychologistEmail) {
         try {
-            String clientEmail = appointment.clientEmail() == null ? null : appointment.clientEmail().trim();
-            if (clientEmail == null || clientEmail.isBlank() || !clientEmail.contains("@")) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Danışanın e-posta adresi yok. Meet daveti için danışan kaydına e-posta ekleyin."
-                );
-            }
             if (psychologistEmail == null || psychologistEmail.isBlank() || !psychologistEmail.contains("@")) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
@@ -134,13 +128,8 @@ public class GoogleCalendarService {
                 );
             }
             Calendar calendar = calendarClient(userId);
-            String clientName = appointment.clientName() == null || appointment.clientName().isBlank()
-                    ? "Danışan"
-                    : appointment.clientName();
-            String title = appointment.title() != null && !appointment.title().isBlank()
-                    ? clientName + " - " + appointment.title()
-                    : "Randevu - " + clientName;
             DateRange range = toDateTime(appointment.appointmentDate(), appointment.appointmentTime(), durationMinutes);
+            String title = privateEventTitle(appointment);
 
             ConferenceData conferenceData = new ConferenceData();
             CreateConferenceRequest createRequest = new CreateConferenceRequest();
@@ -149,19 +138,26 @@ public class GoogleCalendarService {
             conferenceData.setCreateRequest(createRequest);
 
             EventAttendee psychologist = new EventAttendee().setEmail(psychologistEmail).setOrganizer(true).setResponseStatus("accepted");
-            EventAttendee client = new EventAttendee().setEmail(clientEmail);
+            Event.Reminders reminders = new Event.Reminders()
+                    .setUseDefault(false)
+                    .setOverrides(List.of(
+                            new EventReminder().setMethod("popup").setMinutes(24 * 60),
+                            new EventReminder().setMethod("popup").setMinutes(120),
+                            new EventReminder().setMethod("email").setMinutes(24 * 60)
+                    ));
             Event event = new Event()
                     .setSummary(title)
-                    .setDescription("Danışan: " + clientName + "\nPsikolog: " + psychologistEmail)
+                    .setDescription("TestPsikolog seansı. Danışan bilgisi takvim davetine yazılmaz.")
                     .setStart(new EventDateTime().setDateTime(new com.google.api.client.util.DateTime(range.startMillis)).setTimeZone(TIMEZONE))
                     .setEnd(new EventDateTime().setDateTime(new com.google.api.client.util.DateTime(range.endMillis)).setTimeZone(TIMEZONE))
-                    .setAttendees(List.of(psychologist, client))
+                    .setAttendees(List.of(psychologist))
+                    .setReminders(reminders)
                     .setConferenceData(conferenceData);
 
             Event created = calendar.events()
                     .insert("primary", event)
                     .setConferenceDataVersion(1)
-                    .setSendUpdates("all")
+                    .setSendUpdates("none")
                     .execute();
 
             String meetLink = null;
@@ -197,15 +193,9 @@ public class GoogleCalendarService {
     public void updateCalendarEvent(long userId, String eventId, AppointmentResponse appointment, int durationMinutes) {
         try {
             Calendar calendar = calendarClient(userId);
-            String clientName = appointment.clientName() == null || appointment.clientName().isBlank()
-                    ? "Danışan"
-                    : appointment.clientName();
-            String title = appointment.title() != null && !appointment.title().isBlank()
-                    ? clientName + " - " + appointment.title()
-                    : "Randevu - " + clientName;
             DateRange range = toDateTime(appointment.appointmentDate(), appointment.appointmentTime(), durationMinutes);
             Event patch = new Event()
-                    .setSummary(title)
+                    .setSummary(privateEventTitle(appointment))
                     .setStart(new EventDateTime().setDateTime(new com.google.api.client.util.DateTime(range.startMillis)).setTimeZone(TIMEZONE))
                     .setEnd(new EventDateTime().setDateTime(new com.google.api.client.util.DateTime(range.endMillis)).setTimeZone(TIMEZONE));
             calendar.events().patch("primary", eventId, patch).execute();
@@ -361,6 +351,18 @@ public class GoogleCalendarService {
         ZonedDateTime start = startLocal.atZone(ZoneId.of(TIMEZONE));
         ZonedDateTime end = start.plusMinutes(durationMinutes);
         return new DateRange(start.toInstant().toEpochMilli(), end.toInstant().toEpochMilli());
+    }
+
+    public void disconnect(long userId) {
+        jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
+    }
+
+    private static String privateEventTitle(AppointmentResponse appointment) {
+        String time = appointment.appointmentTime() == null || appointment.appointmentTime().isBlank()
+                ? ""
+                : " " + appointment.appointmentTime();
+        String extra = appointment.title() == null || appointment.title().isBlank() ? "" : " · " + appointment.title();
+        return "Seans" + time + extra;
     }
 
     private record DateRange(long startMillis, long endMillis) {

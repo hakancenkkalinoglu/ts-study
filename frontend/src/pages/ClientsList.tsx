@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getClients, deleteClient } from '../services/api';
+import { getClients, deleteClient, apiErrorMessage } from '../services/api';
 import type { Client } from '../types';
 import { AddClientModal } from '../components/AddClientModal';
 import './ClientsList.css';
@@ -8,6 +8,7 @@ import './ClientsList.css';
 export const ClientsList = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
@@ -23,8 +24,10 @@ export const ClientsList = () => {
       setLoading(true);
       const data = await getClients(searchDebounced || undefined);
       setClients(data);
+      setLoadError(null);
     } catch (error) {
       console.error('Error loading clients:', error);
+      setLoadError(apiErrorMessage(error, 'Danışan listesi yüklenemedi.'));
     } finally {
       setLoading(false);
     }
@@ -56,17 +59,10 @@ export const ClientsList = () => {
     return new Date(dateString).toLocaleDateString('tr-TR');
   };
 
-  if (loading) {
-    return (
-      <div className="clients-container">
-        <div className="loading">Yükleniyor...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="clients-container">
       <div className="clients-header">
+        <h1>Danışanlar</h1>
         <div className="clients-header-actions">
           <input
             type="search"
@@ -74,14 +70,17 @@ export const ClientsList = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="search-input"
+            aria-label="Danışan ara"
           />
           <button className="add-button" onClick={() => setIsModalOpen(true)}>
             + Yeni Danışan Ekle
           </button>
         </div>
       </div>
-
-      {clients.length === 0 ? (
+      {loadError ? <p className="clients-error">{loadError}</p> : null}
+      {loading ? (
+        <div className="loading">Yükleniyor...</div>
+      ) : clients.length === 0 ? (
         <div className="empty-state">
           <p>
             {searchDebounced
@@ -114,8 +113,8 @@ export const ClientsList = () => {
                   onClick={() => navigate(`/client/${client.id}`)}
                   className="table-row"
                 >
-                  <td>{client.name || '-'}</td>
-                  <td>{client.email}</td>
+                  <td>{client.name || 'İsimsiz'}</td>
+                  <td>{client.email || '-'}</td>
                   <td>{client.phone || '-'}</td>
                   <td>{formatDate(client.birthDate)}</td>
                   <td>{formatDate(client.createdAt)}</td>

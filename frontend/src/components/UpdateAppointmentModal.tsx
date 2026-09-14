@@ -9,7 +9,7 @@ import {
   apiErrorMessage,
 } from '../services/api';
 import type { AppointmentStatus, AppointmentWithClient, ClinicRoom } from '../types';
-import { APPOINTMENT_STATUSES, appointmentStatus } from '../types';
+import { APPOINTMENT_STATUSES, appointmentStatus, SESSION_DURATIONS, sessionDuration } from '../types';
 import './AddClientModal.css';
 
 const PENDING_MEET_KEY = 'pendingMeetAppointmentId';
@@ -38,6 +38,8 @@ export const UpdateAppointmentModal = ({
       isPaid: !!(apt.isPaid ?? 0),
       status: appointmentStatus(apt.status),
       roomId: apt.roomId || 0,
+      durationMinutes: sessionDuration(apt.durationMinutes),
+      sessionFee: apt.sessionFee ?? ('' as number | ''),
     };
   };
 
@@ -48,6 +50,8 @@ export const UpdateAppointmentModal = ({
     isPaid: false,
     status: 'scheduled' as AppointmentStatus,
     roomId: 0,
+    durationMinutes: 50,
+    sessionFee: '' as number | '',
   });
   const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,6 +62,16 @@ export const UpdateAppointmentModal = ({
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [meetLink, setMeetLink] = useState<string | null>(null);
   const [meetError, setMeetError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   const displayMeetLink = appointment?.googleMeetLink ?? meetLink;
 
@@ -88,7 +102,7 @@ export const UpdateAppointmentModal = ({
     sessionStorage.removeItem(PENDING_MEET_KEY);
     if (appointment.googleMeetLink) return;
     setCreatingMeet(true);
-    createMeetForAppointment(appointment.id, 60)
+    createMeetForAppointment(appointment.id, sessionDuration(appointment.durationMinutes))
       .then((result) => {
         setMeetLink(result.meetLink);
         onSuccess();
@@ -120,6 +134,8 @@ export const UpdateAppointmentModal = ({
         isPaid: formData.isPaid,
         status: formData.status,
         roomId: formData.roomId,
+        durationMinutes: sessionDuration(formData.durationMinutes),
+        sessionFee: formData.sessionFee === '' ? undefined : Number(formData.sessionFee),
       });
       onSuccess();
       onClose();
@@ -150,10 +166,6 @@ export const UpdateAppointmentModal = ({
 
   const handleMeetClick = async () => {
     setMeetError(null);
-    if (!appointment.clientEmail) {
-      setMeetError('Danışanın e-posta adresi yok. Önce danışan kaydına e-posta ekleyin.');
-      return;
-    }
     if (!googleConnected) {
       setConnectingGoogle(true);
       try {
@@ -162,14 +174,17 @@ export const UpdateAppointmentModal = ({
         window.location.href = url;
       } catch {
         sessionStorage.removeItem(PENDING_MEET_KEY);
-        setMeetError('Google bağlantı adresi alınamadı. GOOGLE_CLIENT_ID ayarlı mı?');
+        setMeetError('Google bağlantı adresi alınamadı. Hesap sayfasından Google bağlayın.');
         setConnectingGoogle(false);
       }
       return;
     }
     setCreatingMeet(true);
     try {
-      const result = await createMeetForAppointment(appointment.id, 60);
+      const result = await createMeetForAppointment(
+        appointment.id,
+        sessionDuration(formData.durationMinutes ?? appointment.durationMinutes)
+      );
       setMeetLink(result.meetLink);
       onSuccess();
     } catch (err: unknown) {
@@ -195,10 +210,10 @@ export const UpdateAppointmentModal = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="update-apt-title">
         <div className="modal-header">
-          <h2>Randevuyu Güncelle</h2>
-          <button className="close-button" onClick={onClose}>
+          <h2 id="update-apt-title">Randevuyu Güncelle</h2>
+          <button className="close-button" onClick={onClose} aria-label="Kapat">
             ×
           </button>
         </div>
@@ -227,6 +242,38 @@ export const UpdateAppointmentModal = ({
               value={currentFormData.appointmentTime}
               onChange={(e) =>
                 setFormData({ ...formData, appointmentTime: e.target.value })
+              }
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="durationMinutes">Süre *</label>
+            <select
+              id="durationMinutes"
+              value={currentFormData.durationMinutes}
+              onChange={(e) =>
+                setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
+              }
+            >
+              {SESSION_DURATIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="sessionFee">Bu seans ücreti (₺)</label>
+            <input
+              id="sessionFee"
+              type="number"
+              min={0}
+              placeholder="Anlaşılan ücret"
+              value={currentFormData.sessionFee}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  sessionFee: e.target.value === '' ? '' : Number(e.target.value),
+                })
               }
             />
           </div>
@@ -318,9 +365,13 @@ export const UpdateAppointmentModal = ({
                   <button
                     type="button"
                     className="btn-copy-meet"
-                    onClick={() => navigator.clipboard.writeText(displayMeetLink)}
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(displayMeetLink);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 2000);
+                    }}
                   >
-                    Kopyala
+                    {copied ? 'Kopyalandı' : 'Kopyala'}
                   </button>
                 </div>
                 {appointment.googleHtmlLink && (

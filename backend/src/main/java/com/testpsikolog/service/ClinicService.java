@@ -6,6 +6,8 @@ import com.testpsikolog.dto.ClinicRoomResponse;
 import com.testpsikolog.dto.CreateClinicRequest;
 import com.testpsikolog.dto.CreateRoomRequest;
 import com.testpsikolog.dto.JoinClinicRequest;
+import com.testpsikolog.dto.TransferOwnerRequest;
+import com.testpsikolog.dto.UpdateClinicRequest;
 import com.testpsikolog.dto.UpdateRoomRequest;
 import java.security.SecureRandom;
 import java.util.List;
@@ -134,7 +136,7 @@ public class ClinicService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Klinik bulunamadı.");
         }
         if ("owner".equals(clinic.role())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kurucu ayrılamaz. Kliniği silin veya başka birine bırakın.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kurucu ayrılamaz. Önce sahipliği devredin veya kliniği silin.");
         }
         jdbc.update("DELETE FROM clinic_members WHERE clinicId = ? AND userId = ?", clinic.id(), userId);
     }
@@ -154,6 +156,7 @@ public class ClinicService {
     }
 
     public ClinicRoomResponse addRoom(long userId, CreateRoomRequest request) {
+        requireOwner(userId);
         Long clinicId = requireClinicId(userId);
         String name = requireName(request == null ? null : request.name(), "Oda adı gerekli.");
         String color = normalizeColor(request == null ? null : request.color(), nextRoomColor(clinicId));
@@ -168,6 +171,7 @@ public class ClinicService {
     }
 
     public ClinicRoomResponse updateRoom(long userId, long roomId, UpdateRoomRequest request) {
+        requireOwner(userId);
         requireOwnedRoom(userId, roomId);
         String name = request == null ? null : blankToNull(request.name());
         String color = request == null ? null : blankToNull(request.color());
@@ -188,6 +192,7 @@ public class ClinicService {
     }
 
     public void deleteRoom(long userId, long roomId) {
+        requireOwner(userId);
         requireOwnedRoom(userId, roomId);
         jdbc.update("UPDATE appointments SET roomId = NULL WHERE roomId = ?", roomId);
         jdbc.update("DELETE FROM clinic_rooms WHERE id = ?", roomId);
@@ -203,6 +208,68 @@ public class ClinicService {
                 ROOM_MAPPER,
                 clinicId
         );
+    }
+
+    public ClinicResponse rename(long userId, UpdateClinicRequest request) {
+        ClinicResponse clinic = requireOwner(userId);
+        String name = requireName(request == null ? null : request.name(), "Klinik adı gerekli.");
+        jdbc.update("UPDATE clinics SET name = ? WHERE id = ?", name, clinic.id());
+        return loadClinic(clinic.id(), userId);
+    }
+
+    public ClinicResponse rotateInvite(long userId) {
+        ClinicResponse clinic = requireOwner(userId);
+        String code = newInviteCode();
+        jdbc.update("UPDATE clinics SET inviteCode = ? WHERE id = ?", code, clinic.id());
+        return loadClinic(clinic.id(), userId);
+    }
+
+    public ClinicResponse kickMember(long userId, long memberUserId) {
+        ClinicResponse clinic = requireOwner(userId);
+        if (memberUserId == userId) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kendinizi çıkaramazsınız.");
+        }
+        int deleted = jdbc.update(
+                "DELETE FROM clinic_members WHERE clinicId = ? AND userId = ? AND role != 'owner'",
+                clinic.id(),
+                memberUserId
+        );
+        if (deleted == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Üye bulunamadı.");
+        }
+        return loadClinic(clinic.id(), userId);
+    }
+
+    public ClinicResponse transferOwnership(long userId, TransferOwnerRequest request) {
+        ClinicResponse clinic = requireOwner(userId);
+        Long nextOwnerId = request == null ? null : request.userId();
+        if (nextOwnerId == null || nextOwnerId == userId) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sahipliği başka bir üyeye devredin.");
+        }
+        Integer member = jdbc.query(
+                "SELECT userId FROM clinic_members WHERE clinicId = ? AND userId = ?",
+                rs -> rs.next() ? 1 : null,
+                clinic.id(),
+                nextOwnerId
+        );
+        if (member == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bu kişi klinikte üye değil.");
+        }
+        jdbc.update("UPDATE clinic_members SET role = 'member' WHERE clinicId = ? AND userId = ?", clinic.id(), userId);
+        jdbc.update("UPDATE clinic_members SET role = 'owner' WHERE clinicId = ? AND userId = ?", clinic.id(), nextOwnerId);
+        jdbc.update("UPDATE clinics SET ownerUserId = ? WHERE id = ?", nextOwnerId, clinic.id());
+        return loadClinic(clinic.id(), userId);
+    }
+
+    private ClinicResponse requireOwner(long userId) {
+        ClinicResponse clinic = getMine(userId);
+        if (clinic == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Klinik bulunamadı.");
+        }
+        if (!"owner".equals(clinic.role())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bu işlemi sadece kurucu yapabilir.");
+        }
+        return clinic;
     }
 
     private Long requireClinicId(long userId) {
@@ -239,7 +306,7 @@ public class ClinicService {
         );
         List<ClinicMemberResponse> members = jdbc.query(
                 """
-                SELECT m.userId, m.role, COALESCE(NULLIF(u.email, ''), u.username) AS name
+                SELECT m.userId, m.role, COALESCE(NULLIF(u.displayName, ''), NULLIF(u.email, ''), u.username) AS name
                 FROM clinic_members m
                 INNER JOIN app_users u ON u.id = m.userId
                 WHERE m.clinicId = ?

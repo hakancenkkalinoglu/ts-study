@@ -1,0 +1,26 @@
+.not-found {
+  max-width: 480px;
+  margin: 64px auto;
+  padding: 32px;
+  text-align: center;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+}
+
+.not-found h1 {
+  margin-bottom: 12px;
+}
+
+.not-found p {
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.not-found button {
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+}

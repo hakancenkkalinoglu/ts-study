@@ -46,6 +46,11 @@
   margin: 0;
 }
 
+.clients-error {
+  color: #c0392b;
+  margin-bottom: 16px;
+}
+
 .add-button {
   background: var(--accent-color);
   color: white;

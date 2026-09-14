@@ -6,7 +6,12 @@ import {
   deleteClinicRoom,
   getMyClinic,
   joinClinic,
+  kickClinicMember,
   leaveClinic,
+  renameClinic,
+  rotateClinicInvite,
+  transferClinicOwnership,
+  updateClinicRoom,
   apiErrorMessage,
 } from '../services/api';
 import type { Clinic } from '../types';
@@ -21,11 +26,20 @@ export const ClinicPage = () => {
   const [roomName, setRoomName] = useState('');
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
+  const [editingRoomName, setEditingRoomName] = useState('');
+  const [editingRoomColor, setEditingRoomColor] = useState('#4f46e5');
+  const isOwner = clinic?.role === 'owner';
 
   const loadClinic = useCallback(async () => {
     try {
       setLoading(true);
-      setClinic(await getMyClinic());
+      const data = await getMyClinic();
+      setClinic(data);
+      if (data) {
+        setRenameValue(data.name);
+      }
     } catch (err) {
       setError(apiErrorMessage(err, 'Klinik bilgisi alınamadı.'));
     } finally {
@@ -124,6 +138,59 @@ export const ClinicPage = () => {
     }
   };
 
+  const handleRename = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      setClinic(await renameClinic(renameValue));
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Klinik adı güncellenemedi.'));
+    }
+  };
+
+  const handleRotate = async () => {
+    if (!window.confirm('Davet kodu yenilensin mi? Eski kod çalışmaz.')) return;
+    setError(null);
+    try {
+      setClinic(await rotateClinicInvite());
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Kod yenilenemedi.'));
+    }
+  };
+
+  const handleKick = async (userId: number, name: string) => {
+    if (!window.confirm(`${name} klinikten çıkarılsın mı?`)) return;
+    setError(null);
+    try {
+      setClinic(await kickClinicMember(userId));
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Üye çıkarılamadı.'));
+    }
+  };
+
+  const handleTransfer = async (userId: number, name: string) => {
+    if (!window.confirm(`Sahiplik ${name} kişisine geçsin mi? Siz üye olursunuz.`)) return;
+    setError(null);
+    try {
+      setClinic(await transferClinicOwnership(userId));
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Sahiplik devredilemedi.'));
+    }
+  };
+
+  const handleSaveRoom = async (e: FormEvent) => {
+    e.preventDefault();
+    if (editingRoomId == null) return;
+    setError(null);
+    try {
+      await updateClinicRoom(editingRoomId, { name: editingRoomName, color: editingRoomColor });
+      setEditingRoomId(null);
+      await loadClinic();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Oda güncellenemedi.'));
+    }
+  };
+
   if (loading) {
     return (
       <div className="clinic-container">
@@ -190,9 +257,30 @@ export const ClinicPage = () => {
           <button type="button" className="clinic-secondary" onClick={handleCopyCode}>
             {copied ? 'Kopyalandı' : 'Kopyala'}
           </button>
+          {isOwner ? (
+            <button type="button" className="clinic-secondary" onClick={() => void handleRotate()}>
+              Kodu yenile
+            </button>
+          ) : null}
         </div>
       </div>
       {error ? <div className="clinic-error">{error}</div> : null}
+
+      {isOwner ? (
+        <form className="clinic-card" onSubmit={handleRename}>
+          <h2>Klinik adı</h2>
+          <label htmlFor="rename-clinic">Ad</label>
+          <input
+            id="rename-clinic"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            required
+          />
+          <button type="submit" className="clinic-primary" disabled={saving}>
+            Adı kaydet
+          </button>
+        </form>
+      ) : null}
 
       <section className="clinic-card">
         <h2>Terapistler</h2>
@@ -201,6 +289,16 @@ export const ClinicPage = () => {
             <li key={member.userId}>
               <span>{member.name}</span>
               <span className="clinic-role">{member.role === 'owner' ? 'Kurucu' : 'Üye'}</span>
+              {isOwner && member.role !== 'owner' ? (
+                <span className="clinic-member-actions">
+                  <button type="button" className="clinic-link" onClick={() => void handleKick(member.userId, member.name)}>
+                    Çıkar
+                  </button>
+                  <button type="button" className="clinic-link" onClick={() => void handleTransfer(member.userId, member.name)}>
+                    Kurucu yap
+                  </button>
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -211,25 +309,71 @@ export const ClinicPage = () => {
         <ul className="clinic-list">
           {clinic.rooms.map((room) => (
             <li key={room.id}>
-              <span className="clinic-room-swatch" style={{ background: room.color || '#888' }} />
-              <span>{room.name}</span>
-              <button type="button" className="clinic-link" onClick={() => handleDeleteRoom(room.id, room.name)}>
-                Sil
-              </button>
+              {editingRoomId === room.id ? (
+                <form className="clinic-inline-form" onSubmit={handleSaveRoom}>
+                  <input
+                    value={editingRoomName}
+                    onChange={(e) => setEditingRoomName(e.target.value)}
+                    aria-label="Oda adı"
+                    required
+                  />
+                  <input
+                    type="color"
+                    value={editingRoomColor}
+                    onChange={(e) => setEditingRoomColor(e.target.value)}
+                    aria-label="Oda rengi"
+                  />
+                  <button type="submit" className="clinic-primary">
+                    Kaydet
+                  </button>
+                  <button type="button" className="clinic-secondary" onClick={() => setEditingRoomId(null)}>
+                    Vazgeç
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <span className="clinic-room-swatch" style={{ background: room.color || '#888' }} />
+                  <span>{room.name}</span>
+                  {isOwner ? (
+                    <>
+                      <button
+                        type="button"
+                        className="clinic-link"
+                        onClick={() => {
+                          setEditingRoomId(room.id);
+                          setEditingRoomName(room.name);
+                          setEditingRoomColor(room.color || '#4f46e5');
+                        }}
+                      >
+                        Düzenle
+                      </button>
+                      <button type="button" className="clinic-link" onClick={() => handleDeleteRoom(room.id, room.name)}>
+                        Sil
+                      </button>
+                    </>
+                  ) : null}
+                </>
+              )}
             </li>
           ))}
         </ul>
-        <form className="clinic-inline-form" onSubmit={handleAddRoom}>
-          <input
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            placeholder="Yeni oda adı"
-            required
-          />
-          <button type="submit" className="clinic-primary" disabled={saving}>
-            Oda ekle
-          </button>
-        </form>
+        {isOwner ? (
+          <form className="clinic-inline-form" onSubmit={handleAddRoom}>
+            <label className="sr-only" htmlFor="new-room">
+              Yeni oda adı
+            </label>
+            <input
+              id="new-room"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              placeholder="Yeni oda adı"
+              required
+            />
+            <button type="submit" className="clinic-primary" disabled={saving}>
+              Oda ekle
+            </button>
+          </form>
+        ) : null}
       </section>
 
       <div className="clinic-danger">

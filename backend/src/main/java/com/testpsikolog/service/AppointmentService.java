@@ -3,12 +3,18 @@ package com.testpsikolog.service;
 import com.testpsikolog.dto.AppointmentResponse;
 import com.testpsikolog.dto.CreateAppointmentRequest;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -18,7 +24,7 @@ public class AppointmentService {
             """
             SELECT a.*, c.name as clientName, c.agreedFee as agreedFee, c.email as clientEmail,
                    c.userId as therapistUserId,
-                   COALESCE(NULLIF(u.email, ''), u.username) as therapistName,
+                   COALESCE(NULLIF(u.displayName, ''), NULLIF(u.email, ''), u.username) as therapistName,
                    r.name as roomName, r.color as roomColor
             FROM appointments a
             INNER JOIN clients c ON a.clientId = c.id
@@ -48,6 +54,9 @@ public class AppointmentService {
             columnExists(rs, "roomColor") ? rs.getString("roomColor") : null,
             readLong(rs, "therapistUserId"),
             columnExists(rs, "therapistName") ? rs.getString("therapistName") : null,
+            readDuration(rs),
+            columnExists(rs, "seriesId") ? rs.getString("seriesId") : null,
+            readInt(rs, "sessionFee"),
             true
     );
 
@@ -61,35 +70,60 @@ public class AppointmentService {
         this.clinicService = clinicService;
     }
 
-    public long create(long userId, long clientId, CreateAppointmentRequest input) {
+    @Transactional
+    public List<Long> create(long userId, long clientId, CreateAppointmentRequest input) {
         clientService.requireOwned(userId, clientId);
-        String dateStr = normalizeDate(input.appointmentDate());
+        LocalDate startDate = parseDate(input.appointmentDate());
         String timeStr = normalizeTime(input.appointmentTime());
+        int duration = normalizeDuration(input.durationMinutes());
+        int repeatCount = normalizeRepeatCount(input.repeatCount());
         Long roomId = normalizeRoomId(input.roomId());
         Long clinicId = null;
         if (roomId != null) {
             clinicService.requireOwnedRoom(userId, roomId);
             clinicId = clinicService.clinicIdForUser(userId);
         }
-        assertNoConflict(userId, dateStr, timeStr, roomId, null);
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
-        jdbc.update(
-                """
-                INSERT INTO appointments (clientId, appointmentDate, appointmentTime, title, isPaid, status, clinicId, roomId, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                """,
-                clientId,
-                dateStr,
-                timeStr,
-                input.title(),
-                isPaid,
-                status,
-                clinicId,
-                roomId
-        );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
-        return id == null ? 0L : id;
+        String seriesId = repeatCount > 1 ? UUID.randomUUID().toString() : null;
+        List<Long> ids = new ArrayList<>();
+        for (int index = 0; index < repeatCount; index++) {
+            String dateStr = startDate.plusWeeks(index).toString();
+            try {
+                assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
+            } catch (ResponseStatusException ex) {
+                if (repeatCount > 1) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            (index + 1) + ". seans (" + dateStr + ") çakışıyor: " + ex.getReason()
+                    );
+                }
+                throw ex;
+            }
+            jdbc.update(
+                    """
+                    INSERT INTO appointments (
+                      clientId, appointmentDate, appointmentTime, title, isPaid, status,
+                      clinicId, roomId, durationMinutes, seriesId, sessionFee, createdAt, updatedAt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """,
+                    clientId,
+                    dateStr,
+                    timeStr,
+                    input.title(),
+                    isPaid,
+                    status,
+                    clinicId,
+                    roomId,
+                    duration,
+                    seriesId,
+                    input.sessionFee()
+            );
+            Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
+            ids.add(id == null ? 0L : id);
+        }
+        return ids;
     }
 
     public List<AppointmentResponse> getByClientId(long userId, long clientId) {
@@ -126,6 +160,30 @@ public class AppointmentService {
         return markMine(rows, userId);
     }
 
+    public List<AppointmentResponse> getUpcoming(long userId, int hours) {
+        int window = hours <= 0 ? 24 : Math.min(hours, 72);
+        List<AppointmentResponse> mine = getAll(userId, null);
+        ZoneId zone = ZoneId.of("Europe/Istanbul");
+        ZonedDateTime now = ZonedDateTime.now(zone);
+        ZonedDateTime until = now.plusHours(window);
+        List<AppointmentResponse> upcoming = new ArrayList<>();
+        for (AppointmentResponse apt : mine) {
+            if (!"scheduled".equals(normalizeStatus(apt.status()))) {
+                continue;
+            }
+            try {
+                LocalDate date = parseDate(apt.appointmentDate());
+                String time = normalizeTime(apt.appointmentTime());
+                ZonedDateTime start = LocalDateTime.parse(date + "T" + time).atZone(zone);
+                if (!start.isBefore(now) && !start.isAfter(until)) {
+                    upcoming.add(apt);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return upcoming;
+    }
+
     public AppointmentResponse getByIdWithClient(long userId, long appointmentId) {
         List<AppointmentResponse> rows = jdbc.query(
                 APPOINTMENT_SELECT + " WHERE a.id = ? AND c.userId = ?",
@@ -158,6 +216,9 @@ public class AppointmentService {
         String newTime = data.appointmentTime() != null
                 ? normalizeTime(data.appointmentTime())
                 : normalizeTime(current.appointmentTime());
+        int newDuration = data.durationMinutes() != null
+                ? normalizeDuration(data.durationMinutes())
+                : current.durationMinutes();
         Long newRoomId = current.roomId();
         Long newClinicId = current.clinicId();
         if (data.roomId() != null) {
@@ -170,9 +231,11 @@ public class AppointmentService {
                 newClinicId = clinicService.clinicIdForUser(userId);
             }
         }
-        assertNoConflict(userId, newDate, newTime, newRoomId, appointmentId);
+        assertNoConflict(userId, newDate, newTime, newDuration, newRoomId, appointmentId);
         Integer isPaidVal = data.isPaid() == null ? null : (Boolean.TRUE.equals(data.isPaid()) ? 1 : 0);
         String statusVal = data.status() == null ? null : normalizeStatus(data.status());
+        Integer durationVal = data.durationMinutes() == null ? null : newDuration;
+        boolean sessionFeeProvided = data.sessionFee() != null;
         return jdbc.update(
                 """
                 UPDATE appointments
@@ -184,6 +247,8 @@ public class AppointmentService {
                   status = COALESCE(?, status),
                   clinicId = ?,
                   roomId = ?,
+                  durationMinutes = COALESCE(?, durationMinutes),
+                  sessionFee = CASE WHEN ? = 1 THEN ? ELSE sessionFee END,
                   updatedAt = datetime('now')
                 WHERE id = ? AND clientId = ?
                 """,
@@ -195,6 +260,9 @@ public class AppointmentService {
                 statusVal,
                 newClinicId,
                 newRoomId,
+                durationVal,
+                sessionFeeProvided ? 1 : 0,
+                data.sessionFee(),
                 appointmentId,
                 clientId
         );
@@ -232,79 +300,68 @@ public class AppointmentService {
         );
     }
 
-    private void assertNoConflict(long userId, String appointmentDate, String appointmentTime, Long roomId, Long excludeId) {
-        if (hasTherapistAppointmentAtDateTime(userId, appointmentDate, appointmentTime, excludeId)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu tarih ve saatte zaten bir randevunuz var.");
+    private void assertNoConflict(
+            long userId,
+            String appointmentDate,
+            String appointmentTime,
+            int durationMinutes,
+            Long roomId,
+            Long excludeId
+    ) {
+        if (hasOverlap(loadTherapistSlots(userId, appointmentDate, excludeId), appointmentTime, durationMinutes)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat aralığında zaten bir randevunuz var.");
         }
-        if (roomId != null && hasRoomAppointmentAtDateTime(roomId, appointmentDate, appointmentTime, excludeId)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu oda bu saatte dolu.");
+        if (roomId != null && hasOverlap(loadRoomSlots(roomId, appointmentDate, excludeId), appointmentTime, durationMinutes)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu oda bu saat aralığında dolu.");
         }
     }
 
-    private boolean hasTherapistAppointmentAtDateTime(long userId, String appointmentDate, String appointmentTime, Long excludeId) {
-        String datePattern = appointmentDate + "%";
-        String timePattern = appointmentTime + "%";
-        if (excludeId != null) {
-            Integer existing = jdbc.query(
-                    """
-                    SELECT a.id FROM appointments a
-                    INNER JOIN clients c ON a.clientId = c.id
-                    WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ? AND a.id != ?
-                      AND COALESCE(a.status, 'scheduled') != 'cancelled'
-                    """,
-                    rs -> rs.next() ? rs.getInt("id") : null,
-                    userId,
-                    datePattern,
-                    timePattern,
-                    excludeId
-            );
-            return existing != null;
-        }
-        Integer existing = jdbc.query(
+    private List<TimeSlot> loadTherapistSlots(long userId, String appointmentDate, Long excludeId) {
+        return jdbc.query(
                 """
-                SELECT a.id FROM appointments a
+                SELECT a.id, a.appointmentTime, a.durationMinutes
+                FROM appointments a
                 INNER JOIN clients c ON a.clientId = c.id
-                WHERE c.userId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ?
+                WHERE c.userId = ? AND a.appointmentDate LIKE ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
+                  AND (? IS NULL OR a.id != ?)
                 """,
-                rs -> rs.next() ? rs.getInt("id") : null,
+                (rs, rowNum) -> new TimeSlot(rs.getString("appointmentTime"), readDuration(rs)),
                 userId,
-                datePattern,
-                timePattern
+                appointmentDate + "%",
+                excludeId,
+                excludeId
         );
-        return existing != null;
     }
 
-    private boolean hasRoomAppointmentAtDateTime(long roomId, String appointmentDate, String appointmentTime, Long excludeId) {
-        String datePattern = appointmentDate + "%";
-        String timePattern = appointmentTime + "%";
-        if (excludeId != null) {
-            Integer existing = jdbc.query(
-                    """
-                    SELECT a.id FROM appointments a
-                    WHERE a.roomId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ? AND a.id != ?
-                      AND COALESCE(a.status, 'scheduled') != 'cancelled'
-                    """,
-                    rs -> rs.next() ? rs.getInt("id") : null,
-                    roomId,
-                    datePattern,
-                    timePattern,
-                    excludeId
-            );
-            return existing != null;
-        }
-        Integer existing = jdbc.query(
+    private List<TimeSlot> loadRoomSlots(long roomId, String appointmentDate, Long excludeId) {
+        return jdbc.query(
                 """
-                SELECT a.id FROM appointments a
-                WHERE a.roomId = ? AND a.appointmentDate LIKE ? AND a.appointmentTime LIKE ?
+                SELECT a.id, a.appointmentTime, a.durationMinutes
+                FROM appointments a
+                WHERE a.roomId = ? AND a.appointmentDate LIKE ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
+                  AND (? IS NULL OR a.id != ?)
                 """,
-                rs -> rs.next() ? rs.getInt("id") : null,
+                (rs, rowNum) -> new TimeSlot(rs.getString("appointmentTime"), readDuration(rs)),
                 roomId,
-                datePattern,
-                timePattern
+                appointmentDate + "%",
+                excludeId,
+                excludeId
         );
-        return existing != null;
+    }
+
+    private static boolean hasOverlap(List<TimeSlot> slots, String appointmentTime, int durationMinutes) {
+        int start = toMinutes(appointmentTime);
+        int end = start + durationMinutes;
+        for (TimeSlot slot : slots) {
+            int otherStart = toMinutes(slot.time());
+            int otherEnd = otherStart + slot.durationMinutes();
+            if (start < otherEnd && otherStart < end) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<AppointmentResponse> markMine(List<AppointmentResponse> rows, long userId) {
@@ -336,6 +393,9 @@ public class AppointmentService {
                         row.roomColor(),
                         row.therapistUserId(),
                         row.therapistName(),
+                        row.durationMinutes(),
+                        null,
+                        null,
                         false
                 ));
             }
@@ -366,6 +426,9 @@ public class AppointmentService {
                 row.roomColor(),
                 row.therapistUserId(),
                 row.therapistName(),
+                row.durationMinutes(),
+                row.seriesId(),
+                row.sessionFee(),
                 mine
         );
     }
@@ -385,11 +448,25 @@ public class AppointmentService {
         return normalizeStatus(value);
     }
 
+    private static int readDuration(java.sql.ResultSet rs) throws java.sql.SQLException {
+        if (!columnExists(rs, "durationMinutes") || rs.getObject("durationMinutes") == null) {
+            return 50;
+        }
+        return normalizeDuration(rs.getInt("durationMinutes"));
+    }
+
     private static Long readLong(java.sql.ResultSet rs, String label) throws java.sql.SQLException {
         if (!columnExists(rs, label) || rs.getObject(label) == null) {
             return null;
         }
         return rs.getLong(label);
+    }
+
+    private static Integer readInt(java.sql.ResultSet rs, String label) throws java.sql.SQLException {
+        if (!columnExists(rs, label) || rs.getObject(label) == null) {
+            return null;
+        }
+        return rs.getInt(label);
     }
 
     private static String normalizeStatus(String status) {
@@ -401,6 +478,31 @@ public class AppointmentService {
             return value;
         }
         return "scheduled";
+    }
+
+    private static int normalizeDuration(Integer minutes) {
+        if (minutes == null) {
+            return 50;
+        }
+        if (minutes == 45 || minutes == 50 || minutes == 60 || minutes == 90) {
+            return minutes;
+        }
+        return 50;
+    }
+
+    private static int normalizeRepeatCount(Integer count) {
+        if (count == null || count < 1) {
+            return 1;
+        }
+        return Math.min(count, 52);
+    }
+
+    private static LocalDate parseDate(String d) {
+        try {
+            return LocalDate.parse(normalizeDate(d));
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir tarih girin.");
+        }
     }
 
     private static String normalizeDate(String d) {
@@ -416,6 +518,13 @@ public class AppointmentService {
         return value.length() <= 5 ? value : value.substring(0, 5);
     }
 
+    private static int toMinutes(String time) {
+        String value = normalizeTime(time);
+        int hour = Integer.parseInt(value.substring(0, 2));
+        int minute = Integer.parseInt(value.substring(3, 5));
+        return hour * 60 + minute;
+    }
+
     private static boolean columnExists(java.sql.ResultSet rs, String label) {
         try {
             rs.findColumn(label);
@@ -423,5 +532,8 @@ public class AppointmentService {
         } catch (java.sql.SQLException ex) {
             return false;
         }
+    }
+
+    private record TimeSlot(String time, int durationMinutes) {
     }
 }

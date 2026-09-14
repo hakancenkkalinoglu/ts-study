@@ -1,22 +1,63 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  getClients,
+  getClient,
   getClientNotes,
   getAppointments,
-  getAppointmentNotes,
   createAppointment,
   createAppointmentNote,
+  createNote,
   updateNote,
   deleteNote,
   updateAppointment,
   updateClient,
   getClinicRooms,
+  attachNoteFile,
+  deleteNoteFile,
+  downloadNoteFile,
   apiErrorMessage,
 } from '../services/api';
 import type { Appointment, AppointmentStatus, Client, ClinicRoom, Note } from '../types';
-import { APPOINTMENT_STATUSES, appointmentStatus, appointmentStatusLabel } from '../types';
+import {
+  APPOINTMENT_STATUSES,
+  appointmentStatus,
+  appointmentStatusLabel,
+  REPEAT_COUNTS,
+  SESSION_DURATIONS,
+  sessionDuration,
+  sessionDurationLabel,
+} from '../types';
+import { SessionPackages } from '../components/SessionPackages';
+import { ClientInventories } from '../components/ClientInventories';
+import { istanbulTodayYmd } from '../utils/dates';
 import './ClientDetail.css';
+
+const toDateInputValue = (value: string | null | undefined): string => {
+  if (!value) return '';
+  return value.includes('T') ? value.split('T')[0] : value.slice(0, 10);
+};
+
+const emptyAppointmentForm = () => ({
+  appointmentDate: istanbulTodayYmd(),
+  appointmentTime: '09:00',
+  title: '',
+  isPaid: false,
+  status: 'scheduled' as AppointmentStatus,
+  roomId: 0,
+  durationMinutes: 50,
+  repeatCount: 1,
+  sessionFee: '' as number | '',
+});
+
+const emptyClientForm = () => ({
+  name: '',
+  email: '',
+  birthDate: '',
+  agreedFee: 0,
+  phone: '',
+  emergencyName: '',
+  emergencyPhone: '',
+});
 
 export const ClientDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -32,62 +73,55 @@ export const ClientDetail = () => {
   const [showNoteFormFor, setShowNoteFormFor] = useState<number | null>(null);
   const [editingAppointmentId, setEditingAppointmentId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactForm, setContactForm] = useState({
-    phone: '',
-    emergencyName: '',
-    emergencyPhone: '',
-  });
-  const [savingContact, setSavingContact] = useState(false);
+  const [editingClient, setEditingClient] = useState(false);
+  const [clientForm, setClientForm] = useState(emptyClientForm());
+  const [savingClient, setSavingClient] = useState(false);
+  const [clientFormError, setClientFormError] = useState<string | null>(null);
 
-  const [appointmentForm, setAppointmentForm] = useState({
-    appointmentDate: new Date().toISOString().split('T')[0],
-    appointmentTime: '09:00',
-    title: '',
-    isPaid: false,
-    status: 'scheduled' as AppointmentStatus,
-    roomId: 0,
-  });
+  const [appointmentForm, setAppointmentForm] = useState(emptyAppointmentForm);
   const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [noteForm, setNoteForm] = useState({
     title: '',
     content: '',
-    noteDate: new Date().toISOString().split('T')[0],
+    noteDate: istanbulTodayYmd(),
   });
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteSearch, setNoteSearch] = useState('');
+
+  const fillClientForm = (foundClient: Client) => {
+    setClientForm({
+      name: foundClient.name || '',
+      email: foundClient.email || '',
+      birthDate: toDateInputValue(foundClient.birthDate),
+      agreedFee: foundClient.agreedFee ?? 0,
+      phone: foundClient.phone || '',
+      emergencyName: foundClient.emergencyName || '',
+      emergencyPhone: foundClient.emergencyPhone || '',
+    });
+  };
 
   const loadClientData = useCallback(async () => {
     if (!id) return;
     try {
       setLoading(true);
-      const clients = await getClients();
-      const foundClient = clients.find((c) => c.id === Number(id));
-      if (foundClient) {
-        setClient(foundClient);
-        setContactForm({
-          phone: foundClient.phone || '',
-          emergencyName: foundClient.emergencyName || '',
-          emergencyPhone: foundClient.emergencyPhone || '',
-        });
-        const [appointmentsData, notesData] = await Promise.all([
-          getAppointments(foundClient.id),
-          getClientNotes(foundClient.id),
-        ]);
+      const foundClient = await getClient(Number(id));
+      setClient(foundClient);
+      fillClientForm(foundClient);
+      const [appointmentsData, notesData] = await Promise.all([
+        getAppointments(foundClient.id),
+        getClientNotes(foundClient.id),
+      ]);
         setAppointments(appointmentsData);
         setAllNotes(notesData);
-
         const notesMap: Record<number, Note[]> = {};
-        await Promise.all(
-          appointmentsData.map(async (apt) => {
-            const notes = await getAppointmentNotes(foundClient.id, apt.id);
-            notesMap[apt.id] = notes;
-          })
-        );
+        for (const note of notesData) {
+          if (note.appointmentId == null) continue;
+          notesMap[note.appointmentId] = [...(notesMap[note.appointmentId] || []), note];
+        }
         setNotesByAppointment(notesMap);
-      }
     } catch (error) {
       console.error('Error loading client data:', error);
+      setClient(null);
     } finally {
       setLoading(false);
     }
@@ -116,15 +150,11 @@ export const ClientDetail = () => {
         title: appointmentForm.title || undefined,
         isPaid: appointmentForm.isPaid,
         roomId: appointmentForm.roomId || undefined,
+        durationMinutes: sessionDuration(appointmentForm.durationMinutes),
+        repeatCount: appointmentForm.repeatCount,
+        sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
       });
-      setAppointmentForm({
-        appointmentDate: new Date().toISOString().split('T')[0],
-        appointmentTime: '09:00',
-        title: '',
-        isPaid: false,
-        status: 'scheduled',
-        roomId: 0,
-      });
+      setAppointmentForm(emptyAppointmentForm());
       setShowAppointmentForm(false);
       loadClientData();
     } catch (error: unknown) {
@@ -149,16 +179,11 @@ export const ClientDetail = () => {
         isPaid: appointmentForm.isPaid,
         status: appointmentForm.status,
         roomId: appointmentForm.roomId,
+        durationMinutes: sessionDuration(appointmentForm.durationMinutes),
+        sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
       });
       setEditingAppointmentId(null);
-      setAppointmentForm({
-        appointmentDate: new Date().toISOString().split('T')[0],
-        appointmentTime: '09:00',
-        title: '',
-        isPaid: false,
-        status: 'scheduled',
-        roomId: 0,
-      });
+      setAppointmentForm(emptyAppointmentForm());
       loadClientData();
     } catch (error: unknown) {
       console.error('Error updating appointment:', error);
@@ -198,6 +223,9 @@ export const ClientDetail = () => {
       isPaid: !!(apt.isPaid ?? 0),
       status: appointmentStatus(apt.status),
       roomId: apt.roomId || 0,
+      durationMinutes: sessionDuration(apt.durationMinutes),
+      repeatCount: 1,
+      sessionFee: apt.sessionFee ?? '',
     });
   };
 
@@ -222,8 +250,38 @@ export const ClientDetail = () => {
     }
   };
 
+  const handleAddStandaloneNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !noteForm.content.trim()) return;
+    try {
+      setSubmitting(true);
+      await createNote({
+        clientId: client.id,
+        title: noteForm.title || undefined,
+        content: noteForm.content.trim(),
+        noteDate: noteForm.noteDate,
+      });
+      resetNoteForm();
+      loadClientData();
+    } catch (error) {
+      alert(apiErrorMessage(error, 'Not eklenirken bir hata oluştu.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleNoteFile = async (noteId: number, file: File) => {
+    if (!client) return;
+    try {
+      await attachNoteFile(client.id, noteId, file);
+      loadClientData();
+    } catch (error) {
+      alert(apiErrorMessage(error, 'Ek yüklenemedi.'));
+    }
+  };
+
   const resetNoteForm = () => {
-    setNoteForm({ title: '', content: '', noteDate: new Date().toISOString().split('T')[0] });
+    setNoteForm({ title: '', content: '', noteDate: istanbulTodayYmd() });
     setEditingNoteId(null);
     setShowNoteFormFor(null);
   };
@@ -284,23 +342,33 @@ export const ClientDetail = () => {
     });
   };
 
-  const handleSaveContact = async (e: React.FormEvent) => {
+  const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client) return;
+    const name = clientForm.name.trim();
+    if (!name) {
+      setClientFormError('Ad soyad zorunludur.');
+      return;
+    }
     try {
-      setSavingContact(true);
+      setSavingClient(true);
+      setClientFormError(null);
       await updateClient(client.id, {
-        phone: contactForm.phone,
-        emergencyName: contactForm.emergencyName,
-        emergencyPhone: contactForm.emergencyPhone,
+        name,
+        email: clientForm.email.trim(),
+        birthDate: clientForm.birthDate,
+        agreedFee: clientForm.agreedFee,
+        phone: clientForm.phone,
+        emergencyName: clientForm.emergencyName,
+        emergencyPhone: clientForm.emergencyPhone,
       });
-      setEditingContact(false);
+      setEditingClient(false);
       loadClientData();
     } catch (error) {
-      console.error('Error updating client contact:', error);
-      alert('İletişim bilgileri kaydedilemedi.');
+      console.error('Error updating client:', error);
+      setClientFormError(apiErrorMessage(error, 'Danışan bilgileri kaydedilemedi.'));
     } finally {
-      setSavingContact(false);
+      setSavingClient(false);
     }
   };
 
@@ -369,6 +437,33 @@ export const ClientDetail = () => {
           <span className="note-date">{formatDate(note.noteDate)}</span>
         </div>
         <p className="note-content">{note.content}</p>
+        {note.fileName ? (
+          <p>
+            Ek:{' '}
+            <button type="button" className="clinic-link" onClick={() => client && downloadNoteFile(client.id, note.id, note.fileName)}>
+              {note.fileName}
+            </button>
+            <button
+              type="button"
+              className="clinic-link"
+              onClick={() => client && deleteNoteFile(client.id, note.id).then(() => loadClientData())}
+            >
+              Eki sil
+            </button>
+          </p>
+        ) : (
+          <label className="clinic-link">
+            Ek yükle
+            <input
+              type="file"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleNoteFile(note.id, file);
+              }}
+            />
+          </label>
+        )}
         <div className="note-footer note-footer-actions">
           <span className="note-created">Oluşturulma: {formatDate(note.createdAt)}</span>
           <div className="note-actions">
@@ -414,52 +509,104 @@ export const ClientDetail = () => {
       <div className="client-info-card">
         <div className="client-info-head">
           <h1>{client.name || 'İsimsiz Danışan'}</h1>
-          {!editingContact ? (
-            <button type="button" className="edit-apt-button" onClick={() => setEditingContact(true)}>
-              İletişimi düzenle
+          {!editingClient ? (
+            <button
+              type="button"
+              className="edit-apt-button"
+              onClick={() => {
+                fillClientForm(client);
+                setClientFormError(null);
+                setEditingClient(true);
+              }}
+            >
+              Düzenle
             </button>
           ) : null}
         </div>
-        {editingContact ? (
-          <form className="note-form" onSubmit={handleSaveContact}>
+        {editingClient ? (
+          <form className="note-form" onSubmit={handleSaveClient}>
             <div className="form-group">
-              <label>Telefon</label>
+              <label htmlFor="client-name">Ad Soyad *</label>
               <input
-                type="tel"
-                value={contactForm.phone}
-                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Acil kişi</label>
-              <input
+                id="client-name"
                 type="text"
-                value={contactForm.emergencyName}
-                onChange={(e) => setContactForm({ ...contactForm, emergencyName: e.target.value })}
+                required
+                value={clientForm.name}
+                onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
               />
             </div>
             <div className="form-group">
-              <label>Acil kişi telefonu</label>
+              <label htmlFor="client-email">E-posta</label>
               <input
-                type="tel"
-                value={contactForm.emergencyPhone}
-                onChange={(e) => setContactForm({ ...contactForm, emergencyPhone: e.target.value })}
+                id="client-email"
+                type="email"
+                value={clientForm.email}
+                onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
               />
             </div>
+            <div className="form-group">
+              <label htmlFor="client-birthDate">Doğum Tarihi</label>
+              <input
+                id="client-birthDate"
+                type="date"
+                value={clientForm.birthDate}
+                onChange={(e) => setClientForm({ ...clientForm, birthDate: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="client-agreedFee">Anlaşılan Ücret (₺)</label>
+              <input
+                id="client-agreedFee"
+                type="number"
+                min={0}
+                step={100}
+                value={clientForm.agreedFee}
+                onChange={(e) =>
+                  setClientForm({ ...clientForm, agreedFee: Number(e.target.value) || 0 })
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="client-phone">Telefon</label>
+              <input
+                id="client-phone"
+                type="tel"
+                value={clientForm.phone}
+                onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="client-emergencyName">Acil kişi</label>
+              <input
+                id="client-emergencyName"
+                type="text"
+                value={clientForm.emergencyName}
+                onChange={(e) => setClientForm({ ...clientForm, emergencyName: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="client-emergencyPhone">Acil kişi telefonu</label>
+              <input
+                id="client-emergencyPhone"
+                type="tel"
+                value={clientForm.emergencyPhone}
+                onChange={(e) =>
+                  setClientForm({ ...clientForm, emergencyPhone: e.target.value })
+                }
+              />
+            </div>
+            {clientFormError ? <div className="error-message">{clientFormError}</div> : null}
             <div className="form-actions-inline">
-              <button type="submit" className="submit-button" disabled={savingContact}>
-                {savingContact ? 'Kaydediliyor...' : 'Kaydet'}
+              <button type="submit" className="submit-button" disabled={savingClient}>
+                {savingClient ? 'Kaydediliyor...' : 'Kaydet'}
               </button>
               <button
                 type="button"
                 className="cancel-button"
                 onClick={() => {
-                  setEditingContact(false);
-                  setContactForm({
-                    phone: client.phone || '',
-                    emergencyName: client.emergencyName || '',
-                    emergencyPhone: client.emergencyPhone || '',
-                  });
+                  setEditingClient(false);
+                  setClientFormError(null);
+                  fillClientForm(client);
                 }}
               >
                 Vazgeç
@@ -470,7 +617,7 @@ export const ClientDetail = () => {
           <div className="info-grid">
             <div className="info-item">
               <span className="info-label">E-posta:</span>
-              <span className="info-value">{client.email}</span>
+              <span className="info-value">{client.email || '-'}</span>
             </div>
             <div className="info-item">
               <span className="info-label">Telefon:</span>
@@ -512,6 +659,37 @@ export const ClientDetail = () => {
             </div>
           </div>
         )}
+      </div>
+
+      <SessionPackages clientId={client.id} />
+      <ClientInventories clientId={client.id} />
+
+      <div className="client-info-card">
+        <h2>Randevusuz not</h2>
+        <form className="note-form" onSubmit={handleAddStandaloneNote}>
+          <div className="form-group">
+            <label htmlFor="loose-title">Başlık</label>
+            <input
+              id="loose-title"
+              value={noteForm.title}
+              onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="loose-content">İçerik *</label>
+            <textarea
+              id="loose-content"
+              value={noteForm.content}
+              onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
+              rows={3}
+              required
+            />
+          </div>
+          <button type="submit" className="submit-button" disabled={submitting}>
+            Not kaydet
+          </button>
+        </form>
+        {allNotes.filter((note) => note.appointmentId == null).map((note) => renderNoteCard(note))}
       </div>
 
       <div className="appointments-section">
@@ -565,6 +743,60 @@ export const ClientDetail = () => {
                 required
               />
             </div>
+            <div className="form-group">
+              <label htmlFor="newDurationMinutes">Süre *</label>
+              <select
+                id="newDurationMinutes"
+                value={appointmentForm.durationMinutes}
+                onChange={(e) =>
+                  setAppointmentForm({
+                    ...appointmentForm,
+                    durationMinutes: sessionDuration(Number(e.target.value)),
+                  })
+                }
+              >
+                {SESSION_DURATIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="newSessionFee">Bu seans ücreti (₺)</label>
+              <input
+                id="newSessionFee"
+                type="number"
+                min={0}
+                placeholder="Anlaşılan ücret"
+                value={appointmentForm.sessionFee}
+                onChange={(e) =>
+                  setAppointmentForm({
+                    ...appointmentForm,
+                    sessionFee: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="newRepeatCount">Tekrar</label>
+              <select
+                id="newRepeatCount"
+                value={appointmentForm.repeatCount}
+                onChange={(e) =>
+                  setAppointmentForm({ ...appointmentForm, repeatCount: Number(e.target.value) })
+                }
+              >
+                {REPEAT_COUNTS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              {appointmentForm.repeatCount > 1 ? (
+                <p className="empty-hint">Aynı gün ve saatte haftalık seanslar açılır. Bir seans çakışırsa hiçbiri kaydedilmez.</p>
+              ) : null}
+            </div>
             {rooms.length > 0 ? (
               <div className="form-group">
                 <label>Oda</label>
@@ -606,7 +838,11 @@ export const ClientDetail = () => {
               </label>
             </div>
             <button type="submit" className="submit-button" disabled={submitting}>
-              {submitting ? 'Ekleniyor...' : 'Randevu Ekle'}
+              {submitting
+                ? 'Ekleniyor...'
+                : appointmentForm.repeatCount > 1
+                  ? `${appointmentForm.repeatCount} seans ekle`
+                  : 'Randevu Ekle'}
             </button>
           </form>
         )}
@@ -627,7 +863,9 @@ export const ClientDetail = () => {
                   <div className="appointment-info">
                     <span className="appointment-date">{formatDate(apt.appointmentDate)}</span>
                     {apt.appointmentTime && (
-                      <span className="appointment-time">{apt.appointmentTime}</span>
+                      <span className="appointment-time">
+                        {apt.appointmentTime} · {sessionDurationLabel(apt.durationMinutes)}
+                      </span>
                     )}
                     {apt.title && <span className="appointment-title">— {apt.title}</span>}
                     {apt.roomName ? <span className="appointment-title">· {apt.roomName}</span> : null}
@@ -687,6 +925,41 @@ export const ClientDetail = () => {
                               setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })
                             }
                             required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`editDuration-${apt.id}`}>Süre *</label>
+                          <select
+                            id={`editDuration-${apt.id}`}
+                            value={appointmentForm.durationMinutes}
+                            onChange={(e) =>
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                durationMinutes: sessionDuration(Number(e.target.value)),
+                              })
+                            }
+                          >
+                            {SESSION_DURATIONS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`editFee-${apt.id}`}>Bu seans ücreti (₺)</label>
+                          <input
+                            id={`editFee-${apt.id}`}
+                            type="number"
+                            min={0}
+                            placeholder="Anlaşılan ücret"
+                            value={appointmentForm.sessionFee}
+                            onChange={(e) =>
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                sessionFee: e.target.value === '' ? '' : Number(e.target.value),
+                              })
+                            }
                           />
                         </div>
                         {rooms.length > 0 ? (
@@ -761,13 +1034,7 @@ export const ClientDetail = () => {
                             className="cancel-button"
                             onClick={() => {
                               setEditingAppointmentId(null);
-                              setAppointmentForm({
-                                appointmentDate: new Date().toISOString().split('T')[0],
-                                appointmentTime: '09:00',
-                                title: '',
-                                isPaid: false,
-                                status: 'scheduled',
-                              });
+                              setAppointmentForm(emptyAppointmentForm());
                             }}
                           >
                             İptal
@@ -863,12 +1130,13 @@ export const ClientDetail = () => {
 
       {showAllNotesModal && (
         <div className="modal-overlay" onClick={() => setShowAllNotesModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="all-notes-title" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Danışanın Tüm Notları</h2>
+              <h2 id="all-notes-title">Danışanın Tüm Notları</h2>
               <button
                 className="modal-close"
                 onClick={() => setShowAllNotesModal(false)}
+                aria-label="Kapat"
               >
                 ×
               </button>

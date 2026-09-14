@@ -1,5 +1,13 @@
 import { useState, FormEvent, useEffect } from 'react';
-import { login, register, setStoredToken, getGoogleLoginUrl } from '../services/api';
+import {
+  login,
+  register,
+  setStoredToken,
+  getGoogleLoginUrl,
+  forgotPassword,
+  resetPassword,
+  apiErrorMessage,
+} from '../services/api';
 import './Login.css';
 
 interface LoginProps {
@@ -8,11 +16,15 @@ interface LoginProps {
 }
 
 export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [passwordRepeat, setPasswordRepeat] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [kvkkAccepted, setKvkkAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -22,27 +34,48 @@ export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
     if (google === 'error' || google === 'missing_code') {
       setError('Google ile giriş tamamlanamadı. Tekrar deneyin.');
     }
+    if (sessionStorage.getItem('session_expired') === '1') {
+      sessionStorage.removeItem('session_expired');
+      setError('Oturumunuz sona erdi. Tekrar giriş yapın.');
+    }
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     if (mode === 'register' && password !== passwordRepeat) {
       setError('Şifreler eşleşmiyor.');
       return;
     }
+    if (mode === 'register' && !kvkkAccepted) {
+      setError('Kayıt için KVKK aydınlatma metnini onaylayın.');
+      return;
+    }
     setLoading(true);
     try {
-      const action = mode === 'register' ? register : login;
-      const { token } = await action(email.trim(), password);
+      if (mode === 'forgot') {
+        const message = await forgotPassword(email.trim());
+        setInfo(message);
+        setMode('reset');
+        return;
+      }
+      if (mode === 'reset') {
+        const message = await resetPassword(email.trim(), resetCode.trim(), password);
+        setInfo(message);
+        setMode('login');
+        setPassword('');
+        return;
+      }
+      const action =
+        mode === 'register'
+          ? () => register(email.trim(), password, displayName.trim() || undefined)
+          : () => login(email.trim(), password);
+      const { token } = await action();
       setStoredToken(token);
       onSuccess();
     } catch (err: unknown) {
-      const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-          : null;
-      setError(msg || (mode === 'register' ? 'Kayıt yapılamadı.' : 'Giriş yapılamadı.'));
+      setError(apiErrorMessage(err, mode === 'register' ? 'Kayıt yapılamadı.' : 'İşlem tamamlanamadı.'));
     } finally {
       setLoading(false);
     }
@@ -55,19 +88,9 @@ export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
       const url = await getGoogleLoginUrl();
       window.location.href = url;
     } catch (err: unknown) {
-      const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-          : null;
-      setError(msg || 'Google girişi ayarlı değil. GOOGLE_CLIENT_ID tanımlı mı?');
+      setError(apiErrorMessage(err, 'Google girişi şu anda kullanılamıyor. E-posta ile deneyin.'));
       setGoogleLoading(false);
     }
-  };
-
-  const switchMode = () => {
-    setMode(mode === 'login' ? 'register' : 'login');
-    setError(null);
-    setPasswordRepeat('');
   };
 
   return (
@@ -78,46 +101,74 @@ export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
           <p className="login-subtitle">Google girişi tamamlanıyor...</p>
         ) : (
           <p className="login-subtitle">
-            Gmail ile giriş yapınca takvim ve Meet de bağlanır. Forma e-posta yazmak Google izni vermez.
+            Psikolog hesabıyla danışan, randevu ve seans notlarınızı yönetin. Google ile giriş takvimi de bağlar.
           </p>
         )}
         {bootstrapping ? null : (
           <>
-            <button
-              type="button"
-              className="login-google-btn"
-              onClick={handleGoogle}
-              disabled={loading || googleLoading}
-            >
-              {googleLoading ? 'Google açılıyor...' : 'Google ile devam et'}
-            </button>
-            <div className="login-divider">
-              <span>veya e-posta ile</span>
-            </div>
+            {mode === 'login' || mode === 'register' ? (
+              <>
+                <button
+                  type="button"
+                  className="login-google-btn"
+                  onClick={handleGoogle}
+                  disabled={loading || googleLoading}
+                >
+                  {googleLoading ? 'Google açılıyor...' : 'Google ile devam et'}
+                </button>
+                <div className="login-divider">
+                  <span>veya e-posta ile</span>
+                </div>
+              </>
+            ) : null}
             <form onSubmit={handleSubmit} className="login-form">
+              {mode === 'register' ? (
+                <div className="form-group">
+                  <label htmlFor="displayName">Görünen ad</label>
+                  <input
+                    id="displayName"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+              ) : null}
               <div className="form-group">
                 <label htmlFor="email">E-posta</label>
                 <input
                   id="email"
-                  type={mode === 'register' ? 'email' : 'text'}
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   required
                 />
               </div>
-              <div className="form-group">
-                <label htmlFor="password">Şifre</label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                  required
-                  minLength={mode === 'register' ? 6 : undefined}
-                />
-              </div>
+              {mode === 'reset' ? (
+                <div className="form-group">
+                  <label htmlFor="resetCode">Sıfırlama kodu</label>
+                  <input
+                    id="resetCode"
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value)}
+                    required
+                  />
+                </div>
+              ) : null}
+              {mode !== 'forgot' ? (
+                <div className="form-group">
+                  <label htmlFor="password">{mode === 'reset' ? 'Yeni şifre' : 'Şifre'}</label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    required
+                    minLength={mode === 'login' ? undefined : 6}
+                  />
+                </div>
+              ) : null}
               {mode === 'register' && (
                 <div className="form-group">
                   <label htmlFor="passwordRepeat">Şifre tekrar</label>
@@ -132,20 +183,52 @@ export const Login = ({ onSuccess, bootstrapping = false }: LoginProps) => {
                   />
                 </div>
               )}
+              {mode === 'register' ? (
+                <label className="login-kvkk">
+                  <input
+                    type="checkbox"
+                    checked={kvkkAccepted}
+                    onChange={(e) => setKvkkAccepted(e.target.checked)}
+                  />
+                  Klinik notların gizliliğini koruyacağımı ve KVKK aydınlatmasını okuduğumu onaylıyorum.
+                </label>
+              ) : null}
               {error && <div className="login-error">{error}</div>}
+              {info && <div className="login-info">{info}</div>}
               <button type="submit" className="login-btn" disabled={loading || googleLoading}>
                 {loading
-                  ? mode === 'register'
-                    ? 'Kayıt yapılıyor...'
-                    : 'Giriş yapılıyor...'
+                  ? 'İşleniyor...'
                   : mode === 'register'
                     ? 'Kayıt ol'
-                    : 'Giriş yap'}
+                    : mode === 'forgot'
+                      ? 'Kod oluştur'
+                      : mode === 'reset'
+                        ? 'Şifreyi sıfırla'
+                        : 'Giriş yap'}
               </button>
             </form>
-            <button type="button" className="login-switch" onClick={switchMode}>
-              {mode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}
+            {mode === 'login' ? (
+              <button type="button" className="login-switch" onClick={() => setMode('forgot')}>
+                Şifremi unuttum
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="login-switch"
+              onClick={() => {
+                setMode(mode === 'register' ? 'login' : 'register');
+                setError(null);
+                setInfo(null);
+                setPasswordRepeat('');
+              }}
+            >
+              {mode === 'register' ? 'Zaten hesabın var mı? Giriş yap' : 'Hesabın yok mu? Kayıt ol'}
             </button>
+            {mode === 'forgot' || mode === 'reset' ? (
+              <button type="button" className="login-switch" onClick={() => setMode('login')}>
+                Girişe dön
+              </button>
+            ) : null}
           </>
         )}
       </div>

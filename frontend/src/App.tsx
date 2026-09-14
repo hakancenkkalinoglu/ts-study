@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { MainNav } from './components/MainNav';
 import { Login } from './pages/Login';
 import { Today } from './pages/Today';
@@ -10,6 +11,8 @@ import { Calendar } from './pages/Calendar';
 import { Payments } from './pages/Payments';
 import { Reports } from './pages/Reports';
 import { ClinicPage } from './pages/Clinic';
+import { Account } from './pages/Account';
+import { NotFound } from './pages/NotFound';
 import { exchangeGoogleAuth, getStoredToken, setStoredToken } from './services/api';
 import './App.css';
 
@@ -69,7 +72,9 @@ function App() {
   if (bootstrapping) {
     return (
       <ThemeProvider>
-        <Login onSuccess={() => setToken(getStoredToken())} bootstrapping />
+        <ToastProvider>
+          <Login onSuccess={() => setToken(getStoredToken())} bootstrapping />
+        </ToastProvider>
       </ThemeProvider>
     );
   }
@@ -77,27 +82,33 @@ function App() {
   if (!token) {
     return (
       <ThemeProvider>
-        <Login onSuccess={() => setToken(getStoredToken())} />
+        <ToastProvider>
+          <Login onSuccess={() => setToken(getStoredToken())} />
+        </ToastProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <Router>
-        <div className="app">
-          <MainNav onLogout={() => setToken(null)} />
-          <Routes>
-            <Route path="/" element={<Today />} />
-            <Route path="/danisanlar" element={<ClientsList />} />
-            <Route path="/takvim" element={<Calendar />} />
-            <Route path="/odemeler" element={<Payments />} />
-            <Route path="/raporlar" element={<Reports />} />
-            <Route path="/klinik" element={<ClinicPage />} />
-            <Route path="/client/:id" element={<ClientDetail />} />
-          </Routes>
-        </div>
-      </Router>
+      <ToastProvider>
+        <Router>
+          <div className="app">
+            <MainNav onLogout={() => setToken(null)} />
+            <Routes>
+              <Route path="/" element={<Today />} />
+              <Route path="/danisanlar" element={<ClientsList />} />
+              <Route path="/takvim" element={<Calendar />} />
+              <Route path="/odemeler" element={<Payments />} />
+              <Route path="/raporlar" element={<Reports />} />
+              <Route path="/klinik" element={<ClinicPage />} />
+              <Route path="/hesap" element={<Account />} />
+              <Route path="/client/:id" element={<ClientDetail />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
+        </Router>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

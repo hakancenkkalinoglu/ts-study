@@ -512,6 +512,15 @@
   border: 1px solid var(--border-color);
 }
 
+.note-form .error-message {
+  background: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
 .note-form .form-group {
   margin-bottom: 16px;
 }

@@ -89,7 +89,28 @@
 .today-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border-color);
+}
+
+.today-status-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 8px 0;
+}
+
+.today-status-btn.active-scheduled {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.today-status-btn.active-paid {
+  border-color: #28a745;
+  color: #28a745;
+  background: rgba(40, 167, 69, 0.12);
 }
 
 .today-list li:last-child {
@@ -183,13 +204,6 @@
   text-decoration: line-through;
 }
 
-.today-status-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 6px;
-  padding-right: 8px;
-}
-
 .today-status-btn {
   padding: 6px 10px;
   font-size: 12px;
@@ -234,4 +248,14 @@
   font-size: 13px;
   color: var(--text-secondary);
   flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .today-container {
+    padding: 16px;
+  }
+
+  .today-status-actions {
+    flex-wrap: wrap;
+  }
 }
