@@ -8,7 +8,6 @@ public record CreateAppointmentRequest(
         String status,
         Long roomId,
         Integer durationMinutes,
-        Integer repeatCount,
         Integer sessionFee
 ) {
 }

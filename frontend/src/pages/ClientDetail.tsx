@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialog';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   getClient,
   getClientNotes,
@@ -22,10 +25,9 @@ import {
   APPOINTMENT_STATUSES,
   appointmentStatus,
   appointmentStatusLabel,
-  REPEAT_COUNTS,
-  SESSION_DURATIONS,
   sessionDuration,
   sessionDurationLabel,
+  sessionDurationOptions,
 } from '../types';
 import { SessionPackages } from '../components/SessionPackages';
 import { ClientInventories } from '../components/ClientInventories';
@@ -45,7 +47,6 @@ const emptyAppointmentForm = () => ({
   status: 'scheduled' as AppointmentStatus,
   roomId: 0,
   durationMinutes: 50,
-  repeatCount: 1,
   sessionFee: '' as number | '',
 });
 
@@ -62,6 +63,9 @@ const emptyClientForm = () => ({
 export const ClientDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
+  const notesModalRef = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notesByAppointment, setNotesByAppointment] = useState<Record<number, Note[]>>({});
@@ -87,6 +91,16 @@ export const ClientDetail = () => {
   });
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteSearch, setNoteSearch] = useState('');
+  useFocusTrap(showAllNotesModal, notesModalRef);
+
+  useEffect(() => {
+    if (!showAllNotesModal) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowAllNotesModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showAllNotesModal]);
 
   const fillClientForm = (foundClient: Client) => {
     setClientForm({
@@ -151,7 +165,6 @@ export const ClientDetail = () => {
         isPaid: appointmentForm.isPaid,
         roomId: appointmentForm.roomId || undefined,
         durationMinutes: sessionDuration(appointmentForm.durationMinutes),
-        repeatCount: appointmentForm.repeatCount,
         sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
       });
       setAppointmentForm(emptyAppointmentForm());
@@ -159,7 +172,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error: unknown) {
       console.error('Error adding appointment:', error);
-      alert(apiErrorMessage(error, 'Randevu eklenirken bir hata oluştu.'));
+      showToast(apiErrorMessage(error, 'Randevu eklenirken bir hata oluştu.'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -187,10 +200,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error: unknown) {
       console.error('Error updating appointment:', error);
-      const message = error && typeof error === 'object' && 'response' in error
-        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-        : null;
-      alert(message || 'Randevu güncellenirken bir hata oluştu.');
+      showToast(apiErrorMessage(error, 'Randevu güncellenirken bir hata oluştu.'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -199,7 +209,13 @@ export const ClientDetail = () => {
   const handleDeleteAppointment = async (appointmentId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!client) return;
-    if (!window.confirm('Randevu iptal edilsin mi? Kayıt ve notlar durur, saat boşalır.')) return;
+    const ok = await confirm({
+      title: 'Randevuyu iptal et',
+      message: 'Randevu iptal edilsin mi? Kayıt ve notlar durur, saat boşalır.',
+      confirmLabel: 'İptal et',
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       await updateAppointment(client.id, appointmentId, { status: 'cancelled' });
@@ -207,7 +223,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error) {
       console.error('Error cancelling appointment:', error);
-      alert('Randevu iptal edilirken bir hata oluştu.');
+      showToast('Randevu iptal edilirken bir hata oluştu.', 'error');
     }
   };
 
@@ -224,7 +240,6 @@ export const ClientDetail = () => {
       status: appointmentStatus(apt.status),
       roomId: apt.roomId || 0,
       durationMinutes: sessionDuration(apt.durationMinutes),
-      repeatCount: 1,
       sessionFee: apt.sessionFee ?? '',
     });
   };
@@ -244,7 +259,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error) {
       console.error('Error adding note:', error);
-      alert('Not eklenirken bir hata oluştu.');
+      showToast('Not eklenirken bir hata oluştu.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -264,7 +279,7 @@ export const ClientDetail = () => {
       resetNoteForm();
       loadClientData();
     } catch (error) {
-      alert(apiErrorMessage(error, 'Not eklenirken bir hata oluştu.'));
+      showToast(apiErrorMessage(error, 'Not eklenirken bir hata oluştu.'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -276,7 +291,7 @@ export const ClientDetail = () => {
       await attachNoteFile(client.id, noteId, file);
       loadClientData();
     } catch (error) {
-      alert(apiErrorMessage(error, 'Ek yüklenemedi.'));
+      showToast(apiErrorMessage(error, 'Ek yüklenemedi.'), 'error');
     }
   };
 
@@ -312,7 +327,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error) {
       console.error('Error updating note:', error);
-      alert(apiErrorMessage(error, 'Not güncellenemedi.'));
+      showToast(apiErrorMessage(error, 'Not güncellenemedi.'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -320,7 +335,13 @@ export const ClientDetail = () => {
 
   const handleDeleteNote = async (noteId: number) => {
     if (!client) return;
-    if (!window.confirm('Bu not silinsin mi? Bu işlem geri alınamaz.')) return;
+    const ok = await confirm({
+      title: 'Notu sil',
+      message: 'Bu not silinsin mi? Bu işlem geri alınamaz.',
+      confirmLabel: 'Sil',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteNote(client.id, noteId);
       if (editingNoteId === noteId) {
@@ -329,7 +350,7 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error) {
       console.error('Error deleting note:', error);
-      alert(apiErrorMessage(error, 'Not silinemedi.'));
+      showToast(apiErrorMessage(error, 'Not silinemedi.'), 'error');
     }
   };
 
@@ -755,7 +776,7 @@ export const ClientDetail = () => {
                   })
                 }
               >
-                {SESSION_DURATIONS.map((item) => (
+                {sessionDurationOptions(appointmentForm.durationMinutes).map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
@@ -777,25 +798,6 @@ export const ClientDetail = () => {
                   })
                 }
               />
-            </div>
-            <div className="form-group">
-              <label htmlFor="newRepeatCount">Tekrar</label>
-              <select
-                id="newRepeatCount"
-                value={appointmentForm.repeatCount}
-                onChange={(e) =>
-                  setAppointmentForm({ ...appointmentForm, repeatCount: Number(e.target.value) })
-                }
-              >
-                {REPEAT_COUNTS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              {appointmentForm.repeatCount > 1 ? (
-                <p className="empty-hint">Aynı gün ve saatte haftalık seanslar açılır. Bir seans çakışırsa hiçbiri kaydedilmez.</p>
-              ) : null}
             </div>
             {rooms.length > 0 ? (
               <div className="form-group">
@@ -838,11 +840,7 @@ export const ClientDetail = () => {
               </label>
             </div>
             <button type="submit" className="submit-button" disabled={submitting}>
-              {submitting
-                ? 'Ekleniyor...'
-                : appointmentForm.repeatCount > 1
-                  ? `${appointmentForm.repeatCount} seans ekle`
-                  : 'Randevu Ekle'}
+              {submitting ? 'Ekleniyor...' : 'Randevu Ekle'}
             </button>
           </form>
         )}
@@ -939,7 +937,7 @@ export const ClientDetail = () => {
                               })
                             }
                           >
-                            {SESSION_DURATIONS.map((item) => (
+                            {sessionDurationOptions(appointmentForm.durationMinutes).map((item) => (
                               <option key={item.value} value={item.value}>
                                 {item.label}
                               </option>
@@ -1130,7 +1128,15 @@ export const ClientDetail = () => {
 
       {showAllNotesModal && (
         <div className="modal-overlay" onClick={() => setShowAllNotesModal(false)}>
-          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="all-notes-title" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={notesModalRef}
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="all-notes-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="all-notes-title">Danışanın Tüm Notları</h2>
               <button

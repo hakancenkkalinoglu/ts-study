@@ -8,6 +8,7 @@ import type {
   CreateAppointmentInput,
   UpdateAppointmentInput,
   AppointmentWithClient,
+  BlockedSlot,
   Clinic,
   ClinicRoom,
   UpdateNoteInput,
@@ -29,7 +30,23 @@ const api = axios.create({
   },
 });
 
+const isPublicAuthUrl = (url?: string) => {
+  const path = String(url || '');
+  return (
+    path.includes('/auth/login') ||
+    path.includes('/auth/register') ||
+    path.includes('/auth/forgot-password') ||
+    path.includes('/auth/reset-password') ||
+    path.includes('/auth/google/login') ||
+    path.includes('/auth/google/exchange')
+  );
+};
+
 api.interceptors.request.use((config) => {
+  if (isPublicAuthUrl(config.url)) {
+    delete config.headers.Authorization;
+    return config;
+  }
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -40,12 +57,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       const url = String(err.config?.url || '');
-      if (
-        !url.includes('/auth/login') &&
-        !url.includes('/auth/register') &&
-        !url.includes('/auth/google/login') &&
-        !url.includes('/auth/google/exchange')
-      ) {
+      if (!isPublicAuthUrl(url)) {
         localStorage.removeItem(TOKEN_KEY);
         sessionStorage.setItem('session_expired', '1');
         window.location.href = '/';
@@ -130,13 +142,27 @@ export const getUpcomingAppointments = async (hours?: number): Promise<Appointme
   return response.data;
 };
 
+let googleExchangeInFlight: {
+  code: string;
+  promise: Promise<{ token: string; username: string; email?: string }>;
+} | null = null;
+
 export const exchangeGoogleAuth = async (
   code: string
 ): Promise<{ token: string; username: string; email?: string }> => {
-  const response = await api.post<{ token: string; username: string; email?: string }>('/auth/google/exchange', {
-    code,
-  });
-  return response.data;
+  if (googleExchangeInFlight && googleExchangeInFlight.code === code) {
+    return googleExchangeInFlight.promise;
+  }
+  const promise = api
+    .post<{ token: string; username: string; email?: string }>('/auth/google/exchange', { code })
+    .then((response) => response.data);
+  googleExchangeInFlight = { code, promise };
+  try {
+    return await promise;
+  } catch (error) {
+    googleExchangeInFlight = null;
+    throw error;
+  }
 };
 
 // Client endpoints
@@ -262,6 +288,25 @@ export const getAllAppointments = async (scope?: 'mine' | 'clinic'): Promise<App
   const params = scope ? { scope } : {};
   const response = await api.get<AppointmentWithClient[]>('/appointments', { params });
   return response.data;
+};
+
+export const getBlockedSlots = async (from: string, to: string): Promise<BlockedSlot[]> => {
+  const response = await api.get<BlockedSlot[]>('/me/blocked-slots', { params: { from, to } });
+  return response.data;
+};
+
+export const createBlockedSlot = async (data: {
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  title?: string;
+}): Promise<BlockedSlot> => {
+  const response = await api.post<BlockedSlot>('/me/blocked-slots', data);
+  return response.data;
+};
+
+export const deleteBlockedSlot = async (id: number): Promise<void> => {
+  await api.delete(`/me/blocked-slots/${id}`);
 };
 
 export const getMyClinic = async (): Promise<Clinic | null> => {

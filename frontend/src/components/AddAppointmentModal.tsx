@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { apiErrorMessage, createAppointment, getAppointmentById, getClients, getClinicRooms } from '../services/api';
 import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
-import { REPEAT_COUNTS, SESSION_DURATIONS, sessionDuration } from '../types';
+import { sessionDuration, sessionDurationOptions } from '../types';
 import { istanbulTodayYmd } from '../utils/dates';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import './AddClientModal.css';
 import './AddAppointmentModal.css';
 
@@ -13,6 +14,7 @@ interface AddAppointmentModalProps {
   onSuccess: (createdAppointment?: AppointmentWithClient | null) => void;
   initialDate?: string;
   initialTime?: string;
+  initialDuration?: number;
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -30,6 +32,7 @@ export const AddAppointmentModal = ({
   onSuccess,
   initialDate,
   initialTime,
+  initialDuration,
 }: AddAppointmentModalProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
@@ -43,13 +46,14 @@ export const AddAppointmentModal = ({
     title: '',
     roomId: 0,
     durationMinutes: 50,
-    repeatCount: 1,
   });
   const [rooms, setRooms] = useState<ClinicRoom[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const debouncedSearch = useDebounce(searchTerm, 300);
+  useFocusTrap(isOpen, dialogRef);
 
   const fetchClients = useCallback(async (term: string) => {
     setSearching(true);
@@ -99,8 +103,9 @@ export const AddAppointmentModal = ({
       ...prev,
       appointmentDate: initialDate || prev.appointmentDate,
       appointmentTime: initialTime || '09:00',
+      durationMinutes: sessionDuration(initialDuration ?? 50),
     }));
-  }, [isOpen, initialDate, initialTime]);
+  }, [isOpen, initialDate, initialTime, initialDuration]);
 
   const handleSelectClient = (client: Client) => {
     setFormData((prev) => ({
@@ -149,7 +154,6 @@ export const AddAppointmentModal = ({
         title: formData.title || undefined,
         roomId: formData.roomId || undefined,
         durationMinutes: sessionDuration(formData.durationMinutes),
-        repeatCount: formData.repeatCount,
       });
       const createdAppointment = await getAppointmentById(result.id);
       setFormData({
@@ -160,7 +164,6 @@ export const AddAppointmentModal = ({
         title: '',
         roomId: 0,
         durationMinutes: 50,
-        repeatCount: 1,
       });
       setSearchTerm('');
       onSuccess(createdAppointment);
@@ -174,7 +177,15 @@ export const AddAppointmentModal = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-apt-title" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-apt-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h2 id="add-apt-title">Yeni Randevu Ekle</h2>
           <button className="close-button" onClick={onClose} aria-label="Kapat">
@@ -276,29 +287,12 @@ export const AddAppointmentModal = ({
                 setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
               }
             >
-              {SESSION_DURATIONS.map((item) => (
+              {sessionDurationOptions(formData.durationMinutes).map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
                 </option>
               ))}
             </select>
-          </div>
-          <div className="form-group">
-            <label htmlFor="repeatCount">Tekrar</label>
-            <select
-              id="repeatCount"
-              value={formData.repeatCount}
-              onChange={(e) => setFormData({ ...formData, repeatCount: Number(e.target.value) })}
-            >
-              {REPEAT_COUNTS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            {formData.repeatCount > 1 ? (
-              <p className="meet-hint">Aynı gün ve saatte haftalık seanslar açılır. Bir seans çakışırsa hiçbiri kaydedilmez.</p>
-            ) : null}
           </div>
           {rooms.length > 0 ? (
             <div className="form-group">
@@ -335,11 +329,7 @@ export const AddAppointmentModal = ({
               İptal
             </button>
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading
-                ? 'Ekleniyor...'
-                : formData.repeatCount > 1
-                  ? `${formData.repeatCount} seans ekle`
-                  : 'Ekle'}
+              {loading ? 'Ekleniyor...' : 'Ekle'}
             </button>
           </div>
         </form>

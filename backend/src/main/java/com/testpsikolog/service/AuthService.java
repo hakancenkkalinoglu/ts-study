@@ -204,13 +204,13 @@ public class AuthService {
                 rs -> rs.next() ? rs.getString("token") : null,
                 code.trim()
         );
-        jdbc.update("DELETE FROM auth_exchange_codes WHERE code = ?", code.trim());
         if (token == null || token.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz veya süresi doldu.");
         }
         AuthUser parsed = jwtService.parse(token);
         AuthUser user = resolveFromToken(parsed);
         if (user == null || user.id() == null) {
+            jdbc.update("DELETE FROM auth_exchange_codes WHERE code = ?", code.trim());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz.");
         }
         return new LoginResponse(token, user.username(), user.email());

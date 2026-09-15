@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { ConfirmProvider } from './contexts/ConfirmDialog';
 import { MainNav } from './components/MainNav';
 import { Login } from './pages/Login';
 import { Today } from './pages/Today';
@@ -35,6 +36,14 @@ const stripAuthQuery = (failed = false): void => {
   window.history.replaceState({}, '', next);
 };
 
+const AppProviders = ({ children }: { children: ReactNode }) => (
+  <ThemeProvider>
+    <ToastProvider>
+      <ConfirmProvider>{children}</ConfirmProvider>
+    </ToastProvider>
+  </ThemeProvider>
+);
+
 function App() {
   const [authCode] = useState(() => readAuthCodeFromUrl());
   const [token, setToken] = useState<string | null>(() => (authCode ? null : getStoredToken()));
@@ -51,8 +60,8 @@ function App() {
     let cancelled = false;
     exchangeGoogleAuth(authCode)
       .then((result) => {
-        if (cancelled) return;
         setStoredToken(result.token);
+        if (cancelled) return;
         stripAuthQuery();
         setToken(result.token);
       })
@@ -71,45 +80,39 @@ function App() {
 
   if (bootstrapping) {
     return (
-      <ThemeProvider>
-        <ToastProvider>
-          <Login onSuccess={() => setToken(getStoredToken())} bootstrapping />
-        </ToastProvider>
-      </ThemeProvider>
+      <AppProviders>
+        <Login onSuccess={() => setToken(getStoredToken())} bootstrapping />
+      </AppProviders>
     );
   }
 
   if (!token) {
     return (
-      <ThemeProvider>
-        <ToastProvider>
-          <Login onSuccess={() => setToken(getStoredToken())} />
-        </ToastProvider>
-      </ThemeProvider>
+      <AppProviders>
+        <Login onSuccess={() => setToken(getStoredToken())} />
+      </AppProviders>
     );
   }
 
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <Router>
-          <div className="app">
-            <MainNav onLogout={() => setToken(null)} />
-            <Routes>
-              <Route path="/" element={<Today />} />
-              <Route path="/danisanlar" element={<ClientsList />} />
-              <Route path="/takvim" element={<Calendar />} />
-              <Route path="/odemeler" element={<Payments />} />
-              <Route path="/raporlar" element={<Reports />} />
-              <Route path="/klinik" element={<ClinicPage />} />
-              <Route path="/hesap" element={<Account />} />
-              <Route path="/client/:id" element={<ClientDetail />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </div>
-        </Router>
-      </ToastProvider>
-    </ThemeProvider>
+    <AppProviders>
+      <Router>
+        <div className="app">
+          <MainNav onLogout={() => setToken(null)} />
+          <Routes>
+            <Route path="/" element={<Today />} />
+            <Route path="/danisanlar" element={<ClientsList />} />
+            <Route path="/takvim" element={<Calendar />} />
+            <Route path="/odemeler" element={<Payments />} />
+            <Route path="/raporlar" element={<Reports />} />
+            <Route path="/klinik" element={<ClinicPage />} />
+            <Route path="/hesap" element={<Account />} />
+            <Route path="/client/:id" element={<ClientDetail />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
+      </Router>
+    </AppProviders>
   );
 }
 

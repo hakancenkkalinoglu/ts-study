@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { apiErrorMessage, createClient } from '../services/api';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import './AddClientModal.css';
 
 interface AddClientModalProps {
@@ -9,6 +10,8 @@ interface AddClientModalProps {
 }
 
 export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalProps) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(isOpen, dialogRef);
   const [formData, setFormData] = useState({
     email: '',
     name: '',
@@ -72,7 +75,15 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-client-title" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-client-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h2 id="add-client-title">Yeni Danışan Ekle</h2>
           <button className="close-button" onClick={onClose} aria-label="Kapat">×</button>

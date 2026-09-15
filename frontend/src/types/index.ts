@@ -53,21 +53,24 @@ export const SESSION_DURATIONS: { value: number; label: string }[] = [
 ];
 
 export const sessionDuration = (value?: number | null): number => {
-  if (value === 45 || value === 50 || value === 60 || value === 90) {
-    return value;
+  if (value == null) {
+    return 50;
   }
-  return 50;
+  if (value < 15 || value > 240 || value % 5 !== 0) {
+    return 50;
+  }
+  return value;
+};
+
+export const sessionDurationOptions = (current?: number | null): { value: number; label: string }[] => {
+  const value = sessionDuration(current);
+  if (SESSION_DURATIONS.some((item) => item.value === value)) {
+    return SESSION_DURATIONS;
+  }
+  return [...SESSION_DURATIONS, { value, label: `${value} dk` }].sort((a, b) => a.value - b.value);
 };
 
 export const sessionDurationLabel = (value?: number | null): string => `${sessionDuration(value)} dk`;
-
-export const REPEAT_COUNTS: { value: number; label: string }[] = [
-  { value: 1, label: 'Tek seans' },
-  { value: 4, label: 'Haftalık · 4 seans' },
-  { value: 8, label: 'Haftalık · 8 seans' },
-  { value: 10, label: 'Haftalık · 10 seans' },
-  { value: 12, label: 'Haftalık · 12 seans' },
-];
 
 export type Appointment = {
   id: number;
@@ -100,6 +103,14 @@ export type AppointmentWithClient = Appointment & {
   clientEmail?: string | null;
 };
 
+export type BlockedSlot = {
+  id: number;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  title: string | null;
+};
+
 export type CreateAppointmentInput = {
   clientId: number;
   appointmentDate: string;
@@ -108,7 +119,6 @@ export type CreateAppointmentInput = {
   isPaid?: boolean;
   roomId?: number;
   durationMinutes?: number;
-  repeatCount?: number;
   sessionFee?: number;
 };
 

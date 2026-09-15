@@ -176,6 +176,19 @@ public class SchemaMigrator implements ApplicationRunner {
                 )
                 """
         );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS blocked_slots (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  userId INTEGER NOT NULL,
+                  slotDate TEXT NOT NULL,
+                  startTime TEXT NOT NULL,
+                  endTime TEXT NOT NULL,
+                  title TEXT,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
         jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", System.currentTimeMillis());
     }

@@ -15,15 +15,18 @@ import {
   apiErrorMessage,
 } from '../services/api';
 import type { Clinic } from '../types';
+import { useConfirm } from '../contexts/ConfirmDialog';
 import './Clinic.css';
 
 export const ClinicPage = () => {
+  const { confirm } = useConfirm();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clinicName, setClinicName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [roomName, setRoomName] = useState('');
+  const [roomColor, setRoomColor] = useState('#4f46e5');
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -84,7 +87,9 @@ export const ClinicPage = () => {
     setError(null);
     setSaving(true);
     try {
-      await createClinicRoom(roomName);
+      await createClinicRoom(roomName, roomColor);
+      setRoomName('');
+      setRoomColor('#4f46e5');
       setRoomName('');
       await loadClinic();
     } catch (err) {
@@ -106,7 +111,13 @@ export const ClinicPage = () => {
   };
 
   const handleLeave = async () => {
-    if (!window.confirm('Klinikten ayrılmak istiyor musunuz?')) return;
+    const ok = await confirm({
+      title: 'Klinikten ayrıl',
+      message: 'Klinikten ayrılmak istiyor musunuz?',
+      confirmLabel: 'Ayrıl',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await leaveClinic();
@@ -117,7 +128,13 @@ export const ClinicPage = () => {
   };
 
   const handleDeleteClinic = async () => {
-    if (!window.confirm('Klinik ve odalar silinsin mi? Randevular kalır, oda bilgisi gider.')) return;
+    const ok = await confirm({
+      title: 'Kliniği sil',
+      message: 'Klinik ve odalar silinsin mi? Randevular kalır, oda bilgisi gider.',
+      confirmLabel: 'Sil',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await deleteClinic();
@@ -128,7 +145,13 @@ export const ClinicPage = () => {
   };
 
   const handleDeleteRoom = async (roomId: number, name: string) => {
-    if (!window.confirm(`${name} silinsin mi?`)) return;
+    const ok = await confirm({
+      title: 'Odayı sil',
+      message: `${name} silinsin mi?`,
+      confirmLabel: 'Sil',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await deleteClinicRoom(roomId);
@@ -149,7 +172,13 @@ export const ClinicPage = () => {
   };
 
   const handleRotate = async () => {
-    if (!window.confirm('Davet kodu yenilensin mi? Eski kod çalışmaz.')) return;
+    const ok = await confirm({
+      title: 'Davet kodunu yenile',
+      message: 'Davet kodu yenilensin mi? Eski kod çalışmaz.',
+      confirmLabel: 'Yenile',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       setClinic(await rotateClinicInvite());
@@ -159,7 +188,13 @@ export const ClinicPage = () => {
   };
 
   const handleKick = async (userId: number, name: string) => {
-    if (!window.confirm(`${name} klinikten çıkarılsın mı?`)) return;
+    const ok = await confirm({
+      title: 'Üyeyi çıkar',
+      message: `${name} klinikten çıkarılsın mı?`,
+      confirmLabel: 'Çıkar',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       setClinic(await kickClinicMember(userId));
@@ -169,7 +204,13 @@ export const ClinicPage = () => {
   };
 
   const handleTransfer = async (userId: number, name: string) => {
-    if (!window.confirm(`Sahiplik ${name} kişisine geçsin mi? Siz üye olursunuz.`)) return;
+    const ok = await confirm({
+      title: 'Sahipliği devret',
+      message: `Sahiplik ${name} kişisine geçsin mi? Siz üye olursunuz.`,
+      confirmLabel: 'Devret',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       setClinic(await transferClinicOwnership(userId));
@@ -368,6 +409,12 @@ export const ClinicPage = () => {
               onChange={(e) => setRoomName(e.target.value)}
               placeholder="Yeni oda adı"
               required
+            />
+            <input
+              type="color"
+              value={roomColor}
+              onChange={(e) => setRoomColor(e.target.value)}
+              aria-label="Oda rengi"
             />
             <button type="submit" className="clinic-primary" disabled={saving}>
               Oda ekle

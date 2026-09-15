@@ -12,10 +12,12 @@ import {
 } from '../services/api';
 import type { Profile } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialog';
 import './Account.css';
 
 export const Account = () => {
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -101,7 +103,13 @@ export const Account = () => {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Hesabınız, danışanlarınız ve notlarınız kalıcı silinsin mi?')) return;
+    const ok = await confirm({
+      title: 'Hesabı sil',
+      message: 'Hesabınız, danışanlarınız ve notlarınız kalıcı silinsin mi?',
+      confirmLabel: 'Hesabı sil',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteAccount();
       clearStoredToken();

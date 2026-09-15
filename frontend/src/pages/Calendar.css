@@ -210,6 +210,7 @@
   position: relative;
   border-right: 1px solid var(--border-color);
   cursor: pointer;
+  touch-action: none;
 }
 
 .time-day-col.is-today {
@@ -224,14 +225,116 @@
 .time-event {
   position: absolute;
   box-sizing: border-box;
-  padding: 4px 8px;
+  padding: 4px 8px 10px;
   border-radius: 6px;
   color: white;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
   z-index: 2;
   background: var(--accent-color);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  user-select: none;
+  touch-action: none;
+}
+
+.time-event.is-dragging {
+  cursor: grabbing;
+  z-index: 5;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.time-event-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  cursor: ns-resize;
+  z-index: 3;
+}
+
+.time-event-resize:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.time-blocked {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 6px;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bg-hover),
+    var(--bg-hover) 6px,
+    var(--bg-secondary) 6px,
+    var(--bg-secondary) 12px
+  );
+  border: 1px dashed var(--border-color);
+}
+
+.time-create-preview {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  z-index: 3;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  pointer-events: none;
+  background: var(--accent-color);
+  opacity: 0.75;
+}
+
+.slot-chooser-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.slot-chooser {
+  position: fixed;
+  min-width: 200px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slot-chooser-meta {
+  margin: 0 8px 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.slot-chooser button {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.slot-chooser button:hover {
+  background: var(--bg-hover);
 }
 
 .time-event.status-cancelled,
@@ -245,6 +348,7 @@
 
 .time-event.not-mine {
   outline: 1px dashed rgba(255, 255, 255, 0.5);
+  cursor: pointer;
 }
 
 .time-event-time,

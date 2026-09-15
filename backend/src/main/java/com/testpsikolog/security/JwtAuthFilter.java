@@ -29,18 +29,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        if ("/health".equals(path)) {
-            return true;
+        String path = request.getRequestURI();
+        if (path == null || path.isBlank()) {
+            path = request.getServletPath();
         }
-        if ("/api/auth/login".equals(path)
-                || "/api/auth/register".equals(path)
-                || "/api/auth/google/login".equals(path)
-                || "/api/auth/google/callback".equals(path)
-                || "/api/auth/google/exchange".equals(path)) {
-            return true;
+        int query = path.indexOf('?');
+        if (query >= 0) {
+            path = path.substring(0, query);
         }
-        return false;
+        return "/health".equals(path)
+                || path.endsWith("/auth/login")
+                || path.endsWith("/auth/register")
+                || path.endsWith("/auth/forgot-password")
+                || path.endsWith("/auth/reset-password")
+                || path.endsWith("/auth/google/login")
+                || path.endsWith("/auth/google/callback")
+                || path.endsWith("/auth/google/exchange");
     }
 
     @Override

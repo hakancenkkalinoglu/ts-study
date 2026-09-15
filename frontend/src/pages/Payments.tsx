@@ -5,12 +5,14 @@ import type { AppointmentWithClient } from '../types';
 import { appointmentAmount, appointmentStatus, appointmentStatusLabel } from '../types';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { useToast } from '../contexts/ToastContext';
 import './Payments.css';
 
 type PaymentTab = 'pending' | 'completed';
 
 export const Payments = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<PaymentTab>('pending');
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export const Payments = () => {
       loadAppointments();
     } catch (error) {
       console.error('Error updating payment status:', error);
-      alert(apiErrorMessage(error, 'Ödeme durumu güncellenirken bir hata oluştu.'));
+      showToast(apiErrorMessage(error, 'Ödeme durumu güncellenirken bir hata oluştu.'), 'error');
     } finally {
       setUpdatingId(null);
     }

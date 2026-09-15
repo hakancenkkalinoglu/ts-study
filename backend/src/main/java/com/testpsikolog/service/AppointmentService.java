@@ -9,7 +9,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -63,20 +62,26 @@ public class AppointmentService {
     private final JdbcTemplate jdbc;
     private final ClientService clientService;
     private final ClinicService clinicService;
+    private final ScheduleService scheduleService;
 
-    public AppointmentService(JdbcTemplate jdbc, ClientService clientService, ClinicService clinicService) {
+    public AppointmentService(
+            JdbcTemplate jdbc,
+            ClientService clientService,
+            ClinicService clinicService,
+            ScheduleService scheduleService
+    ) {
         this.jdbc = jdbc;
         this.clientService = clientService;
         this.clinicService = clinicService;
+        this.scheduleService = scheduleService;
     }
 
     @Transactional
     public List<Long> create(long userId, long clientId, CreateAppointmentRequest input) {
         clientService.requireOwned(userId, clientId);
-        LocalDate startDate = parseDate(input.appointmentDate());
+        String dateStr = parseDate(input.appointmentDate()).toString();
         String timeStr = normalizeTime(input.appointmentTime());
         int duration = normalizeDuration(input.durationMinutes());
-        int repeatCount = normalizeRepeatCount(input.repeatCount());
         Long roomId = normalizeRoomId(input.roomId());
         Long clinicId = null;
         if (roomId != null) {
@@ -85,45 +90,28 @@ public class AppointmentService {
         }
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
-        String seriesId = repeatCount > 1 ? UUID.randomUUID().toString() : null;
-        List<Long> ids = new ArrayList<>();
-        for (int index = 0; index < repeatCount; index++) {
-            String dateStr = startDate.plusWeeks(index).toString();
-            try {
-                assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
-            } catch (ResponseStatusException ex) {
-                if (repeatCount > 1) {
-                    throw new ResponseStatusException(
-                            HttpStatus.CONFLICT,
-                            (index + 1) + ". seans (" + dateStr + ") çakışıyor: " + ex.getReason()
-                    );
-                }
-                throw ex;
-            }
-            jdbc.update(
-                    """
-                    INSERT INTO appointments (
-                      clientId, appointmentDate, appointmentTime, title, isPaid, status,
-                      clinicId, roomId, durationMinutes, seriesId, sessionFee, createdAt, updatedAt
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                    """,
-                    clientId,
-                    dateStr,
-                    timeStr,
-                    input.title(),
-                    isPaid,
-                    status,
-                    clinicId,
-                    roomId,
-                    duration,
-                    seriesId,
-                    input.sessionFee()
-            );
-            Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
-            ids.add(id == null ? 0L : id);
-        }
-        return ids;
+        assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
+        jdbc.update(
+                """
+                INSERT INTO appointments (
+                  clientId, appointmentDate, appointmentTime, title, isPaid, status,
+                  clinicId, roomId, durationMinutes, sessionFee, createdAt, updatedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                clientId,
+                dateStr,
+                timeStr,
+                input.title(),
+                isPaid,
+                status,
+                clinicId,
+                roomId,
+                duration,
+                input.sessionFee()
+        );
+        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
+        return List.of(id == null ? 0L : id);
     }
 
     public List<AppointmentResponse> getByClientId(long userId, long clientId) {
@@ -308,11 +296,18 @@ public class AppointmentService {
             Long roomId,
             Long excludeId
     ) {
+        int start = toMinutes(appointmentTime);
+        if (start + durationMinutes > 24 * 60) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seans gece yarısını geçemez.");
+        }
         if (hasOverlap(loadTherapistSlots(userId, appointmentDate, excludeId), appointmentTime, durationMinutes)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat aralığında zaten bir randevunuz var.");
         }
         if (roomId != null && hasOverlap(loadRoomSlots(roomId, appointmentDate, excludeId), appointmentTime, durationMinutes)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu oda bu saat aralığında dolu.");
+        }
+        if (scheduleService.overlapsBlocked(userId, appointmentDate, appointmentTime, durationMinutes)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat kapalı.");
         }
     }
 
@@ -484,17 +479,10 @@ public class AppointmentService {
         if (minutes == null) {
             return 50;
         }
-        if (minutes == 45 || minutes == 50 || minutes == 60 || minutes == 90) {
-            return minutes;
+        if (minutes < 15 || minutes > 240 || minutes % 5 != 0) {
+            return 50;
         }
-        return 50;
-    }
-
-    private static int normalizeRepeatCount(Integer count) {
-        if (count == null || count < 1) {
-            return 1;
-        }
-        return Math.min(count, 52);
+        return minutes;
     }
 
     private static LocalDate parseDate(String d) {

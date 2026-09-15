@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import {
   updateAppointment,
   deleteAppointment,
@@ -9,7 +9,9 @@ import {
   apiErrorMessage,
 } from '../services/api';
 import type { AppointmentStatus, AppointmentWithClient, ClinicRoom } from '../types';
-import { APPOINTMENT_STATUSES, appointmentStatus, SESSION_DURATIONS, sessionDuration } from '../types';
+import { APPOINTMENT_STATUSES, appointmentStatus, sessionDuration, sessionDurationOptions } from '../types';
+import { useConfirm } from '../contexts/ConfirmDialog';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import './AddClientModal.css';
 
 const PENDING_MEET_KEY = 'pendingMeetAppointmentId';
@@ -27,6 +29,9 @@ export const UpdateAppointmentModal = ({
   onSuccess,
   appointment,
 }: UpdateAppointmentModalProps) => {
+  const { confirm } = useConfirm();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(isOpen, dialogRef);
   const getInitialFormData = (apt: AppointmentWithClient) => {
     const dateStr = apt.appointmentDate.includes('T')
       ? apt.appointmentDate.split('T')[0]
@@ -148,7 +153,13 @@ export const UpdateAppointmentModal = ({
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Randevu ve notları kalıcı silinsin mi? Gelmedi / iptal için durumu değiştirmen yeterli.')) return;
+    const ok = await confirm({
+      title: 'Randevuyu sil',
+      message: 'Randevu ve notları kalıcı silinsin mi? Gelmedi / iptal için durumu değiştirmen yeterli.',
+      confirmLabel: 'Kalıcı sil',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     setDeleting(true);
 
@@ -210,7 +221,15 @@ export const UpdateAppointmentModal = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="update-apt-title">
+      <div
+        ref={dialogRef}
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-apt-title"
+        tabIndex={-1}
+      >
         <div className="modal-header">
           <h2 id="update-apt-title">Randevuyu Güncelle</h2>
           <button className="close-button" onClick={onClose} aria-label="Kapat">
@@ -254,7 +273,7 @@ export const UpdateAppointmentModal = ({
                 setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
               }
             >
-              {SESSION_DURATIONS.map((item) => (
+              {sessionDurationOptions(currentFormData.durationMinutes).map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
                 </option>

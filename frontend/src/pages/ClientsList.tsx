@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { getClients, deleteClient, apiErrorMessage } from '../services/api';
 import type { Client } from '../types';
 import { AddClientModal } from '../components/AddClientModal';
+import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialog';
 import './ClientsList.css';
 
 export const ClientsList = () => {
@@ -13,6 +15,8 @@ export const ClientsList = () => {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchDebounced(search), 300);
@@ -39,18 +43,19 @@ export const ClientsList = () => {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (
-      window.confirm(
-        'Bu danışanı silmek randevularını ve seans notlarını da kalıcı olarak siler. Devam etmek istiyor musunuz?'
-      )
-    ) {
-      try {
-        await deleteClient(id);
-        loadClients();
-      } catch (error) {
-        console.error('Error deleting client:', error);
-        alert('Danışan silinirken bir hata oluştu.');
-      }
+    const ok = await confirm({
+      title: 'Danışanı sil',
+      message: 'Bu danışanı silmek randevularını ve seans notlarını da kalıcı olarak siler. Devam etmek istiyor musunuz?',
+      confirmLabel: 'Sil',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteClient(id);
+      loadClients();
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      showToast('Danışan silinirken bir hata oluştu.', 'error');
     }
   };
 
