@@ -19,11 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
     private final AuthService authService;
 
-    public JwtAuthFilter(JwtService jwtService, @Lazy AuthService authService) {
-        this.jwtService = jwtService;
+    public JwtAuthFilter(@Lazy AuthService authService) {
         this.authService = authService;
     }
 
@@ -59,11 +57,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         try {
-            AuthUser parsed = jwtService.parse(header.substring(7));
-            AuthUser user = authService.resolveFromToken(parsed);
-            if (user == null || user.id() == null) {
-                throw new IllegalArgumentException("Token gecersiz.");
-            }
+            AuthUser user = authService.authenticate(header.substring(7));
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(user, null, List.of());
             SecurityContextHolder.getContext().setAuthentication(authentication);

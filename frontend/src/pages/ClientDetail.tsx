@@ -188,12 +188,13 @@ export const ClientDetail = () => {
       await updateAppointment(client.id, appointmentId, {
         appointmentDate: appointmentForm.appointmentDate,
         appointmentTime: appointmentForm.appointmentTime,
-        title: appointmentForm.title || undefined,
+        title: appointmentForm.title,
         isPaid: appointmentForm.isPaid,
         status: appointmentForm.status,
         roomId: appointmentForm.roomId,
         durationMinutes: sessionDuration(appointmentForm.durationMinutes),
         sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
+        clearSessionFee: appointmentForm.sessionFee === '',
       });
       setEditingAppointmentId(null);
       setAppointmentForm(emptyAppointmentForm());

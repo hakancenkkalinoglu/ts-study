@@ -131,6 +131,7 @@ export type UpdateAppointmentInput = {
   roomId?: number;
   durationMinutes?: number;
   sessionFee?: number;
+  clearSessionFee?: boolean;
 };
 
 export type ClinicMember = {

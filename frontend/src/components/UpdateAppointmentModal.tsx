@@ -135,12 +135,13 @@ export const UpdateAppointmentModal = ({
       await updateAppointment(appointment.clientId, appointment.id, {
         appointmentDate: formData.appointmentDate || initialFormData.appointmentDate,
         appointmentTime: formData.appointmentTime || initialFormData.appointmentTime,
-        title: formData.title || undefined,
+        title: formData.title,
         isPaid: formData.isPaid,
         status: formData.status,
         roomId: formData.roomId,
         durationMinutes: sessionDuration(formData.durationMinutes),
         sessionFee: formData.sessionFee === '' ? undefined : Number(formData.sessionFee),
+        clearSessionFee: formData.sessionFee === '',
       });
       onSuccess();
       onClose();

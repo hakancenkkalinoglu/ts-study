@@ -21,6 +21,8 @@ public class NoteService {
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "png", "jpg", "jpeg", "webp", "txt", "doc", "docx");
     private static final long MAX_BYTES = 8L * 1024 * 1024;
+    private static final int MAX_CONTENT_LENGTH = 50_000;
+    private static final int MAX_TITLE_LENGTH = 200;
 
     private static final RowMapper<NoteResponse> NOTE_MAPPER = (rs, rowNum) -> new NoteResponse(
             rs.getLong("id"),
@@ -49,6 +51,7 @@ public class NoteService {
         if (note.content() == null || note.content().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not içeriği boş olamaz.");
         }
+        assertLengths(note.title(), note.content());
         if (note.appointmentId() != null) {
             var appointment = appointmentService.getByIdWithClient(userId, note.appointmentId());
             if (appointment == null || appointment.clientId() != note.clientId()) {
@@ -97,6 +100,7 @@ public class NoteService {
         if (data.content() != null && data.content().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not içeriği boş olamaz.");
         }
+        assertLengths(data.title(), data.content());
         return jdbc.update(
                 """
                 UPDATE client_notes
@@ -217,6 +221,15 @@ public class NoteService {
             Files.deleteIfExists(Path.of(stored));
         } catch (IOException ex) {
             System.out.println("Note attachment delete failed: " + ex.getMessage());
+        }
+    }
+
+    private static void assertLengths(String title, String content) {
+        if (title != null && title.length() > MAX_TITLE_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not başlığı en fazla 200 karakter olabilir.");
+        }
+        if (content != null && content.length() > MAX_CONTENT_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not içeriği en fazla 50.000 karakter olabilir.");
         }
     }
 

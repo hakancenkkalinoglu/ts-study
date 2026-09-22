@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -130,6 +131,7 @@ public class ClinicService {
         return loadClinic(clinicId, userId);
     }
 
+    @Transactional
     public void leave(long userId) {
         ClinicResponse clinic = getMine(userId);
         if (clinic == null) {
@@ -139,6 +141,21 @@ public class ClinicService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kurucu ayrılamaz. Önce sahipliği devredin veya kliniği silin.");
         }
         jdbc.update("DELETE FROM clinic_members WHERE clinicId = ? AND userId = ?", clinic.id(), userId);
+        releaseFutureRooms(clinic.id(), userId);
+    }
+
+    private void releaseFutureRooms(long clinicId, long memberUserId) {
+        jdbc.update(
+                """
+                UPDATE appointments
+                SET roomId = NULL, clinicId = NULL, updatedAt = datetime('now')
+                WHERE roomId IN (SELECT id FROM clinic_rooms WHERE clinicId = ?)
+                  AND appointmentDate >= date('now', 'localtime')
+                  AND clientId IN (SELECT id FROM clients WHERE userId = ?)
+                """,
+                clinicId,
+                memberUserId
+        );
     }
 
     public void deleteClinic(long userId) {
@@ -224,6 +241,7 @@ public class ClinicService {
         return loadClinic(clinic.id(), userId);
     }
 
+    @Transactional
     public ClinicResponse kickMember(long userId, long memberUserId) {
         ClinicResponse clinic = requireOwner(userId);
         if (memberUserId == userId) {
@@ -237,6 +255,7 @@ public class ClinicService {
         if (deleted == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Üye bulunamadı.");
         }
+        releaseFutureRooms(clinic.id(), memberUserId);
         return loadClinic(clinic.id(), userId);
     }
 

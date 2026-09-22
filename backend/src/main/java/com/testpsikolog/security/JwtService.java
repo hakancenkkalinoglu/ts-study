@@ -20,6 +20,10 @@ public class JwtService {
             "your-secret-key-change-in-production",
             "change-me"
     );
+    private static final String OAUTH_STATE_PURPOSE = "google-oauth";
+    private static final String OAUTH_MODE_SIGN_IN = "signin";
+    private static final String OAUTH_MODE_LINK = "link";
+    private static final long OAUTH_STATE_TTL_MS = 10 * 60 * 1000L;
 
     private final AppProperties appProperties;
 
@@ -28,13 +32,14 @@ public class JwtService {
         ensureSecret();
     }
 
-    public String createToken(long userId, String username) {
+    public String createToken(long userId, String username, int tokenVersion) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + appProperties.getJwtExpirationMs());
         return Jwts.builder()
                 .subject(username)
                 .claim("username", username)
                 .claim("uid", userId)
+                .claim("tv", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(signingKey())
@@ -42,11 +47,10 @@ public class JwtService {
     }
 
     public AuthUser parse(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(signingKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        Claims claims = readClaims(token);
+        if (claims.get("purpose") != null) {
+            throw new IllegalArgumentException("Token gecersiz.");
+        }
         String username = claims.get("username", String.class);
         if (username == null || username.isBlank()) {
             username = claims.getSubject();
@@ -60,6 +64,52 @@ public class JwtService {
             userId = uid == null ? null : uid.longValue();
         }
         return new AuthUser(userId, username, null);
+    }
+
+    public int tokenVersion(String token) {
+        Number version = readClaims(token).get("tv", Number.class);
+        return version == null ? 0 : version.intValue();
+    }
+
+    public String createOAuthState(Long userId) {
+        Date now = new Date();
+        var builder = Jwts.builder()
+                .claim("purpose", OAUTH_STATE_PURPOSE)
+                .claim("mode", userId == null ? OAUTH_MODE_SIGN_IN : OAUTH_MODE_LINK)
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + OAUTH_STATE_TTL_MS))
+                .signWith(signingKey());
+        if (userId != null) {
+            builder.claim("uid", userId);
+        }
+        return builder.compact();
+    }
+
+    public OAuthState parseOAuthState(String state) {
+        if (state == null || state.isBlank()) {
+            throw new IllegalArgumentException("OAuth state missing.");
+        }
+        Claims claims = readClaims(state);
+        if (!OAUTH_STATE_PURPOSE.equals(claims.get("purpose", String.class))) {
+            throw new IllegalArgumentException("OAuth state invalid.");
+        }
+        String mode = claims.get("mode", String.class);
+        if (OAUTH_MODE_SIGN_IN.equals(mode)) {
+            return new OAuthState(true, null);
+        }
+        Number uid = claims.get("uid", Number.class);
+        if (!OAUTH_MODE_LINK.equals(mode) || uid == null) {
+            throw new IllegalArgumentException("OAuth state invalid.");
+        }
+        return new OAuthState(false, uid.longValue());
+    }
+
+    private Claims readClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(signingKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     private SecretKey signingKey() {
@@ -89,5 +139,8 @@ public class JwtService {
             return true;
         }
         return INSECURE_SECRETS.contains(secret.trim());
+    }
+
+    public record OAuthState(boolean signIn, Long userId) {
     }
 }

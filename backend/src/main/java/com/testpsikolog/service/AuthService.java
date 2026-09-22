@@ -5,36 +5,49 @@ import com.testpsikolog.dto.LoginRequest;
 import com.testpsikolog.dto.LoginResponse;
 import com.testpsikolog.security.AuthUser;
 import com.testpsikolog.security.JwtService;
+import com.testpsikolog.security.LoginThrottle;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
+
+    private static final String LOGIN_THROTTLE_PREFIX = "login:";
+    private static final String RESET_THROTTLE_PREFIX = "reset:";
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AppProperties appProperties;
     private final ClientService clientService;
+    private final LoginThrottle loginThrottle;
 
     public AuthService(
             JdbcTemplate jdbc,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             AppProperties appProperties,
-            ClientService clientService
+            ClientService clientService,
+            LoginThrottle loginThrottle
     ) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.appProperties = appProperties;
         this.clientService = clientService;
+        this.loginThrottle = loginThrottle;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -43,8 +56,11 @@ public class AuthService {
         if (loginId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-posta gerekli.");
         }
+        String throttleKey = LOGIN_THROTTLE_PREFIX + loginId;
+        loginThrottle.assertAllowed(throttleKey);
         AuthUser user = findByLogin(loginId);
         if (user == null || user.id() == null) {
+            loginThrottle.recordFailure(throttleKey);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "E-posta veya şifre hatalı.");
         }
         String hash = jdbc.query(
@@ -53,8 +69,10 @@ public class AuthService {
                 user.id()
         );
         if (hash == null || !passwordEncoder.matches(request.password(), hash)) {
+            loginThrottle.recordFailure(throttleKey);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "E-posta veya şifre hatalı.");
         }
+        loginThrottle.reset(throttleKey);
         return toResponse(user);
     }
 
@@ -131,11 +149,16 @@ public class AuthService {
         return email.trim();
     }
 
-    public AuthUser resolveFromToken(AuthUser parsed) {
-        if (parsed.id() != null) {
-            return findById(parsed.id());
+    public AuthUser authenticate(String token) {
+        AuthUser parsed = jwtService.parse(token);
+        AuthUser user = parsed.id() != null ? findById(parsed.id()) : findByLogin(parsed.username());
+        if (user == null || user.id() == null) {
+            throw new IllegalArgumentException("Token gecersiz.");
         }
-        return findByLogin(parsed.username());
+        if (jwtService.tokenVersion(token) != currentTokenVersion(user.id())) {
+            throw new IllegalArgumentException("Token revoked.");
+        }
+        return user;
     }
 
     public AuthUser findByLogin(String loginId) {
@@ -207,10 +230,14 @@ public class AuthService {
         if (token == null || token.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz veya süresi doldu.");
         }
-        AuthUser parsed = jwtService.parse(token);
-        AuthUser user = resolveFromToken(parsed);
-        if (user == null || user.id() == null) {
-            jdbc.update("DELETE FROM auth_exchange_codes WHERE code = ?", code.trim());
+        int consumed = jdbc.update("DELETE FROM auth_exchange_codes WHERE code = ?", code.trim());
+        if (consumed == 0) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz veya süresi doldu.");
+        }
+        AuthUser user;
+        try {
+            user = authenticate(token);
+        } catch (Exception ex) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Giriş kodu geçersiz.");
         }
         return new LoginResponse(token, user.username(), user.email());
@@ -277,7 +304,7 @@ public class AuthService {
         return getProfile(userId, googleConnected);
     }
 
-    public void changePassword(long userId, com.testpsikolog.dto.ChangePasswordRequest request) {
+    public LoginResponse changePassword(long userId, com.testpsikolog.dto.ChangePasswordRequest request) {
         if (request == null || request.currentPassword() == null || request.newPassword() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mevcut ve yeni şifre gerekli.");
         }
@@ -292,7 +319,12 @@ public class AuthService {
         if (hash == null || !passwordEncoder.matches(request.currentPassword(), hash)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mevcut şifre hatalı.");
         }
-        jdbc.update("UPDATE app_users SET passwordHash = ? WHERE id = ?", passwordEncoder.encode(request.newPassword()), userId);
+        updatePasswordAndRevokeTokens(userId, request.newPassword());
+        AuthUser user = findById(userId);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Hesap bulunamadı.");
+        }
+        return toResponse(user);
     }
 
     public void forgotPassword(com.testpsikolog.dto.ForgotPasswordRequest request) {
@@ -331,6 +363,8 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Şifre en az 6 karakter olmalı.");
         }
         String email = request.email().trim().toLowerCase();
+        String throttleKey = RESET_THROTTLE_PREFIX + email;
+        loginThrottle.assertAllowed(throttleKey);
         jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", java.time.Instant.now().toEpochMilli());
         String storedHash = jdbc.query(
                 "SELECT codeHash FROM password_reset_tokens WHERE email = ? ORDER BY expiresAt DESC LIMIT 1",
@@ -338,14 +372,34 @@ public class AuthService {
                 email
         );
         if (storedHash == null || !passwordEncoder.matches(request.code().trim(), storedHash)) {
+            loginThrottle.recordFailure(throttleKey);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kod geçersiz veya süresi doldu.");
         }
         AuthUser user = findByLogin(email);
         if (user == null || user.id() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kod geçersiz veya süresi doldu.");
         }
-        jdbc.update("UPDATE app_users SET passwordHash = ? WHERE id = ?", passwordEncoder.encode(request.newPassword()), user.id());
+        updatePasswordAndRevokeTokens(user.id(), request.newPassword());
         jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email);
+        loginThrottle.reset(throttleKey);
+        loginThrottle.reset(LOGIN_THROTTLE_PREFIX + email);
+    }
+
+    private void updatePasswordAndRevokeTokens(long userId, String newPassword) {
+        jdbc.update(
+                "UPDATE app_users SET passwordHash = ?, tokenVersion = COALESCE(tokenVersion, 0) + 1 WHERE id = ?",
+                passwordEncoder.encode(newPassword),
+                userId
+        );
+    }
+
+    private int currentTokenVersion(long userId) {
+        Integer version = jdbc.query(
+                "SELECT tokenVersion FROM app_users WHERE id = ?",
+                rs -> rs.next() && rs.getObject("tokenVersion") != null ? rs.getInt("tokenVersion") : 0,
+                userId
+        );
+        return version == null ? 0 : version;
     }
 
     public java.util.Map<String, Object> exportAccount(long userId) {
@@ -381,6 +435,7 @@ public class AuthService {
         return payload;
     }
 
+    @Transactional
     public void deleteAccount(long userId) {
         Long clinicId = jdbc.query(
                 "SELECT clinicId FROM clinic_members WHERE userId = ? AND role = 'owner'",
@@ -398,12 +453,36 @@ public class AuthService {
                 (rs, rowNum) -> rs.getLong("id"),
                 userId
         );
+        String email = jdbc.query(
+                "SELECT email FROM app_users WHERE id = ?",
+                rs -> rs.next() ? rs.getString("email") : null,
+                userId
+        );
         for (Long clientId : clientIds) {
             clientService.delete(userId, clientId);
         }
+        jdbc.update("DELETE FROM blocked_slots WHERE userId = ?", userId);
         jdbc.update("DELETE FROM clinic_members WHERE userId = ?", userId);
         jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
+        if (email != null) {
+            jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email.toLowerCase());
+        }
         jdbc.update("DELETE FROM app_users WHERE id = ?", userId);
+        deleteUploadDirectory(userId);
+    }
+
+    private static void deleteUploadDirectory(long userId) {
+        Path dir = Path.of(System.getProperty("user.dir"), "data", "uploads", String.valueOf(userId));
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(dir)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException ex) {
+            System.out.println("Upload directory delete failed: " + ex.getMessage());
+        }
     }
 
     private static String coalesce(String first, String second) {
@@ -415,7 +494,7 @@ public class AuthService {
 
     private LoginResponse toResponse(AuthUser user) {
         return new LoginResponse(
-                jwtService.createToken(user.id(), user.username()),
+                jwtService.createToken(user.id(), user.username(), currentTokenVersion(user.id())),
                 user.username(),
                 user.email()
         );

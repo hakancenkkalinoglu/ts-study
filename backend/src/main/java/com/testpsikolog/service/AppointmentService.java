@@ -3,12 +3,15 @@ package com.testpsikolog.service;
 import com.testpsikolog.dto.AppointmentResponse;
 import com.testpsikolog.dto.CreateAppointmentRequest;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
+import com.testpsikolog.util.AttachmentFiles;
+import com.testpsikolog.util.ScheduleInputs;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -18,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AppointmentService {
+
+    private static final String CANCELLED = "cancelled";
 
     private static final String APPOINTMENT_SELECT =
             """
@@ -79,9 +84,12 @@ public class AppointmentService {
     @Transactional
     public List<Long> create(long userId, long clientId, CreateAppointmentRequest input) {
         clientService.requireOwned(userId, clientId);
-        String dateStr = parseDate(input.appointmentDate()).toString();
-        String timeStr = normalizeTime(input.appointmentTime());
-        int duration = normalizeDuration(input.durationMinutes());
+        String dateStr = ScheduleInputs.requireDate(input.appointmentDate());
+        String timeStr = input.appointmentTime() == null || input.appointmentTime().isBlank()
+                ? "09:00"
+                : ScheduleInputs.requireTime(input.appointmentTime());
+        int duration = ScheduleInputs.requireDuration(input.durationMinutes());
+        Integer sessionFee = ScheduleInputs.requireNonNegativeFee(input.sessionFee());
         Long roomId = normalizeRoomId(input.roomId());
         Long clinicId = null;
         if (roomId != null) {
@@ -90,7 +98,9 @@ public class AppointmentService {
         }
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
-        assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
+        if (!CANCELLED.equals(status)) {
+            assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
+        }
         jdbc.update(
                 """
                 INSERT INTO appointments (
@@ -102,13 +112,13 @@ public class AppointmentService {
                 clientId,
                 dateStr,
                 timeStr,
-                input.title(),
+                blankToNull(input.title()),
                 isPaid,
                 status,
                 clinicId,
                 roomId,
                 duration,
-                input.sessionFee()
+                sessionFee
         );
         Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return List.of(id == null ? 0L : id);
@@ -198,39 +208,52 @@ public class AppointmentService {
             return 0;
         }
         AppointmentResponse current = currentRows.get(0);
+        String currentDate = normalizeDate(current.appointmentDate());
+        String currentTime = normalizeTime(current.appointmentTime());
         String newDate = data.appointmentDate() != null
-                ? normalizeDate(data.appointmentDate())
-                : normalizeDate(current.appointmentDate());
+                ? ScheduleInputs.requireDate(data.appointmentDate())
+                : currentDate;
         String newTime = data.appointmentTime() != null
-                ? normalizeTime(data.appointmentTime())
-                : normalizeTime(current.appointmentTime());
+                ? ScheduleInputs.requireTime(data.appointmentTime())
+                : currentTime;
         int newDuration = data.durationMinutes() != null
-                ? normalizeDuration(data.durationMinutes())
+                ? ScheduleInputs.requireDuration(data.durationMinutes())
                 : current.durationMinutes();
+        ScheduleInputs.requireNonNegativeFee(data.sessionFee());
         Long newRoomId = current.roomId();
         Long newClinicId = current.clinicId();
-        if (data.roomId() != null) {
-            if (data.roomId() == 0L) {
-                newRoomId = null;
-                newClinicId = clinicService.clinicIdForUser(userId);
-            } else {
-                clinicService.requireOwnedRoom(userId, data.roomId());
-                newRoomId = data.roomId();
-                newClinicId = clinicService.clinicIdForUser(userId);
+        Long requestedRoomId = data.roomId() == null ? current.roomId() : normalizeRoomId(data.roomId());
+        if (!Objects.equals(requestedRoomId, current.roomId())) {
+            if (requestedRoomId != null) {
+                clinicService.requireOwnedRoom(userId, requestedRoomId);
             }
+            newRoomId = requestedRoomId;
+            newClinicId = clinicService.clinicIdForUser(userId);
         }
-        assertNoConflict(userId, newDate, newTime, newDuration, newRoomId, appointmentId);
+        String currentStatus = normalizeStatus(current.status());
+        String newStatus = data.status() == null ? currentStatus : normalizeStatus(data.status());
+        boolean willBeActive = !CANCELLED.equals(newStatus);
+        boolean scheduleChanged = !newDate.equals(currentDate)
+                || !newTime.equals(currentTime)
+                || newDuration != current.durationMinutes()
+                || !Objects.equals(newRoomId, current.roomId());
+        boolean reactivated = CANCELLED.equals(currentStatus) && willBeActive;
+        if (willBeActive && (scheduleChanged || reactivated)) {
+            assertNoConflict(userId, newDate, newTime, newDuration, newRoomId, appointmentId);
+        }
         Integer isPaidVal = data.isPaid() == null ? null : (Boolean.TRUE.equals(data.isPaid()) ? 1 : 0);
-        String statusVal = data.status() == null ? null : normalizeStatus(data.status());
+        String statusVal = data.status() == null ? null : newStatus;
         Integer durationVal = data.durationMinutes() == null ? null : newDuration;
-        boolean sessionFeeProvided = data.sessionFee() != null;
+        boolean titleProvided = data.title() != null;
+        boolean clearSessionFee = Boolean.TRUE.equals(data.clearSessionFee());
+        boolean sessionFeeProvided = clearSessionFee || data.sessionFee() != null;
         return jdbc.update(
                 """
                 UPDATE appointments
                 SET
                   appointmentDate = COALESCE(?, appointmentDate),
                   appointmentTime = COALESCE(?, appointmentTime),
-                  title = COALESCE(?, title),
+                  title = CASE WHEN ? = 1 THEN ? ELSE title END,
                   isPaid = CASE WHEN ? IS NOT NULL THEN ? ELSE isPaid END,
                   status = COALESCE(?, status),
                   clinicId = ?,
@@ -242,7 +265,8 @@ public class AppointmentService {
                 """,
                 data.appointmentDate() != null ? newDate : null,
                 data.appointmentTime() != null ? newTime : null,
-                data.title(),
+                titleProvided ? 1 : 0,
+                blankToNull(data.title()),
                 isPaidVal,
                 isPaidVal,
                 statusVal,
@@ -250,15 +274,25 @@ public class AppointmentService {
                 newRoomId,
                 durationVal,
                 sessionFeeProvided ? 1 : 0,
-                data.sessionFee(),
+                clearSessionFee ? null : data.sessionFee(),
                 appointmentId,
                 clientId
         );
     }
 
+    @Transactional
     public int delete(long userId, long appointmentId, long clientId) {
         clientService.requireOwned(userId, clientId);
-        return jdbc.update(
+        List<String> attachmentPaths = jdbc.query(
+                """
+                SELECT filePath FROM client_notes
+                WHERE appointmentId = ? AND clientId = ? AND filePath IS NOT NULL AND filePath <> ''
+                """,
+                (rs, rowNum) -> rs.getString("filePath"),
+                appointmentId,
+                clientId
+        );
+        int deleted = jdbc.update(
                 """
                 DELETE FROM appointments
                 WHERE id = ? AND clientId = ?
@@ -268,6 +302,12 @@ public class AppointmentService {
                 clientId,
                 userId
         );
+        if (deleted == 0) {
+            return 0;
+        }
+        jdbc.update("DELETE FROM client_notes WHERE appointmentId = ? AND clientId = ?", appointmentId, clientId);
+        AttachmentFiles.deleteQuietly(attachmentPaths);
+        return deleted;
     }
 
     public int updateGoogleFields(long userId, long appointmentId, String eventId, String meetLink, String htmlLink) {
@@ -334,6 +374,9 @@ public class AppointmentService {
                 """
                 SELECT a.id, a.appointmentTime, a.durationMinutes
                 FROM appointments a
+                INNER JOIN clients c ON a.clientId = c.id
+                INNER JOIN clinic_rooms r ON r.id = a.roomId
+                INNER JOIN clinic_members m ON m.clinicId = r.clinicId AND m.userId = c.userId
                 WHERE a.roomId = ? AND a.appointmentDate LIKE ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
                   AND (? IS NULL OR a.id != ?)
@@ -426,6 +469,13 @@ public class AppointmentService {
                 row.sessionFee(),
                 mine
         );
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private static Long normalizeRoomId(Long roomId) {

@@ -2,7 +2,7 @@ package com.testpsikolog.service;
 
 import com.testpsikolog.dto.BlockedSlotResponse;
 import com.testpsikolog.dto.CreateBlockedSlotRequest;
-import java.time.LocalDate;
+import com.testpsikolog.util.ScheduleInputs;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,17 +48,9 @@ public class ScheduleService {
     }
 
     public BlockedSlotResponse create(long userId, CreateBlockedSlotRequest request) {
-        String date = normalizeDate(request.slotDate());
-        if (date == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir tarih girin.");
-        }
-        try {
-            LocalDate.parse(date);
-        } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir tarih girin.");
-        }
-        String startTime = normalizeTime(request.startTime());
-        String endTime = normalizeTime(request.endTime());
+        String date = ScheduleInputs.requireDate(request.slotDate());
+        String startTime = ScheduleInputs.requireTime(request.startTime());
+        String endTime = ScheduleInputs.requireTime(request.endTime());
         int start = toMinutes(startTime);
         int end = toMinutes(endTime);
         if (end <= start) {

@@ -3,6 +3,8 @@ package com.testpsikolog.service;
 import com.testpsikolog.dto.ClientResponse;
 import com.testpsikolog.dto.CreateClientRequest;
 import com.testpsikolog.dto.UpdateClientRequest;
+import com.testpsikolog.util.AttachmentFiles;
+import com.testpsikolog.util.ScheduleInputs;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,7 +81,8 @@ public class ClientService {
         if (request.password() != null && !request.password().isBlank()) {
             hashed = passwordEncoder.encode(request.password());
         }
-        int agreedFee = request.agreedFee() == null ? 2000 : request.agreedFee();
+        Integer requestedFee = ScheduleInputs.requireNonNegativeFee(request.agreedFee());
+        int agreedFee = requestedFee == null ? 2000 : requestedFee;
         jdbc.update(
                 """
                 INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt)
@@ -103,6 +106,7 @@ public class ClientService {
         if (!ownsClient(userId, id)) {
             return 0;
         }
+        ScheduleInputs.requireNonNegativeFee(data.agreedFee());
         String name = data.name() == null ? null : requireName(data.name());
         boolean emailProvided = data.email() != null;
         String email = emailProvided ? normalizeOptionalEmail(data.email()) : null;
@@ -207,11 +211,18 @@ public class ClientService {
         if (!ownsClient(userId, id)) {
             return 0;
         }
+        List<String> attachmentPaths = jdbc.query(
+                "SELECT filePath FROM client_notes WHERE clientId = ? AND filePath IS NOT NULL AND filePath <> ''",
+                (rs, rowNum) -> rs.getString("filePath"),
+                id
+        );
         jdbc.update("DELETE FROM client_notes WHERE clientId = ?", id);
         jdbc.update("DELETE FROM appointments WHERE clientId = ?", id);
         jdbc.update("DELETE FROM session_packages WHERE clientId = ?", id);
         jdbc.update("DELETE FROM client_inventory_results WHERE clientId = ?", id);
-        return jdbc.update("DELETE FROM clients WHERE id = ? AND userId = ?", id, userId);
+        int deleted = jdbc.update("DELETE FROM clients WHERE id = ? AND userId = ?", id, userId);
+        AttachmentFiles.deleteQuietly(attachmentPaths);
+        return deleted;
     }
 
     public void requireOwned(long userId, long clientId) {

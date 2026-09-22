@@ -74,7 +74,7 @@ public class AuthController {
             @RequestParam(value = "state", required = false) String state,
             HttpServletResponse response
     ) throws IOException {
-        boolean signIn = "signin".equals(state);
+        boolean signIn = googleCalendarService.isSignInState(state);
         String failPath = signIn ? "/?google=error" : "/takvim?google=error";
         if (code == null || code.isBlank()) {
             response.sendRedirect(appProperties.getFrontendUrl() + (signIn ? "/?google=missing_code" : "/takvim?google=missing_code"));
@@ -124,10 +124,9 @@ public class AuthController {
     }
 
     @PutMapping("/auth/password")
-    public MessageResponse changePassword(@RequestBody com.testpsikolog.dto.ChangePasswordRequest request) {
+    public LoginResponse changePassword(@RequestBody com.testpsikolog.dto.ChangePasswordRequest request) {
         long userId = currentUserService.requireUser().id();
-        authService.changePassword(userId, request);
-        return new MessageResponse("Şifre güncellendi.");
+        return authService.changePassword(userId, request);
     }
 
     @PostMapping("/auth/forgot-password")

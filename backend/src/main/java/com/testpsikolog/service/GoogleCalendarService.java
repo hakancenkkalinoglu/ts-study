@@ -25,6 +25,7 @@ import com.testpsikolog.config.AppProperties;
 import com.testpsikolog.dto.AppointmentResponse;
 import com.testpsikolog.dto.MeetResponse;
 import com.testpsikolog.security.AuthUser;
+import com.testpsikolog.security.JwtService;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
@@ -41,7 +42,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class GoogleCalendarService {
 
-    static final String SIGN_IN_STATE = "signin";
     private static final String TIMEZONE = "Europe/Istanbul";
     private static final List<String> SCOPES = List.of(
             "openid",
@@ -57,11 +57,18 @@ public class GoogleCalendarService {
     private final AppProperties appProperties;
     private final JdbcTemplate jdbc;
     private final AuthService authService;
+    private final JwtService jwtService;
 
-    public GoogleCalendarService(AppProperties appProperties, JdbcTemplate jdbc, AuthService authService) {
+    public GoogleCalendarService(
+            AppProperties appProperties,
+            JdbcTemplate jdbc,
+            AuthService authService,
+            JwtService jwtService
+    ) {
         this.appProperties = appProperties;
         this.jdbc = jdbc;
         this.authService = authService;
+        this.jwtService = jwtService;
     }
 
     public boolean isConnected(long userId) {
@@ -69,18 +76,32 @@ public class GoogleCalendarService {
     }
 
     public String getAuthUrl(long userId) {
-        return buildAuthUrl(String.valueOf(userId));
+        return buildAuthUrl(jwtService.createOAuthState(userId));
     }
 
     public String getSignInAuthUrl() {
-        return buildAuthUrl(SIGN_IN_STATE);
+        return buildAuthUrl(jwtService.createOAuthState(null));
+    }
+
+    public boolean isSignInState(String state) {
+        try {
+            return jwtService.parseOAuthState(state).signIn();
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     public String completeOAuth(String code, String state) {
+        JwtService.OAuthState oauthState;
+        try {
+            oauthState = jwtService.parseOAuthState(state);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Google oturumu eşleştirilemedi.");
+        }
         try {
             NetHttpTransport transport = GoogleNetHttpTransport.newTrustedTransport();
             GoogleTokenResponse tokenResponse = requestTokens(transport, code);
-            if (SIGN_IN_STATE.equals(state)) {
+            if (oauthState.signIn()) {
                 String email = fetchGoogleEmail(transport, tokenResponse.getAccessToken());
                 var login = authService.loginOrRegisterFromGoogle(email);
                 AuthUser user = authService.findByLogin(email);
@@ -94,12 +115,7 @@ public class GoogleCalendarService {
                 }
                 return login.token();
             }
-            long userId;
-            try {
-                userId = Long.parseLong(state);
-            } catch (Exception ex) {
-                throw new IllegalStateException("Google oturumu eşleştirilemedi.");
-            }
+            long userId = oauthState.userId();
             Integer exists = jdbc.query(
                     "SELECT id FROM app_users WHERE id = ?",
                     rs -> rs.next() ? rs.getInt("id") : null,

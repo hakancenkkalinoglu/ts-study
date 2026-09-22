@@ -157,7 +157,10 @@ public class AppointmentController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found");
         }
         AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, appointmentId);
-        if (appointment != null
+        if (appointment != null && appointment.googleEventId() != null && "cancelled".equals(appointment.status())) {
+            googleCalendarService.deleteCalendarEvent(userId, appointment.googleEventId());
+            appointmentService.updateGoogleFields(userId, appointmentId, null, null, null);
+        } else if (appointment != null
                 && appointment.googleEventId() != null
                 && (body.appointmentDate() != null
                         || body.appointmentTime() != null

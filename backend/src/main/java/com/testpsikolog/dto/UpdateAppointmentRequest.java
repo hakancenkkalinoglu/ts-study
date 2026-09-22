@@ -8,6 +8,7 @@ public record UpdateAppointmentRequest(
         String status,
         Long roomId,
         Integer durationMinutes,
-        Integer sessionFee
+        Integer sessionFee,
+        Boolean clearSessionFee
 ) {
 }

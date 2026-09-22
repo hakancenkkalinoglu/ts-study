@@ -110,7 +110,8 @@ export const updateProfile = async (data: {
 };
 
 export const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
-  await api.put('/auth/password', { currentPassword, newPassword });
+  const response = await api.put<{ token: string }>('/auth/password', { currentPassword, newPassword });
+  setStoredToken(response.data.token);
 };
 
 export const forgotPassword = async (email: string): Promise<string> => {

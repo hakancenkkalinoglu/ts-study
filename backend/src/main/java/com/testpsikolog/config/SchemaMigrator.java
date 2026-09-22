@@ -113,6 +113,9 @@ public class SchemaMigrator implements ApplicationRunner {
             jdbc.execute("ALTER TABLE app_users ADD COLUMN reminderHours INTEGER");
         }
         jdbc.update("UPDATE app_users SET reminderHours = 24 WHERE reminderHours IS NULL");
+        if (!hasColumn("app_users", "tokenVersion")) {
+            jdbc.execute("ALTER TABLE app_users ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0");
+        }
         if (!hasColumn("appointments", "sessionFee")) {
             jdbc.execute("ALTER TABLE appointments ADD COLUMN sessionFee INTEGER");
         }
@@ -187,6 +190,12 @@ public class SchemaMigrator implements ApplicationRunner {
                   title TEXT,
                   createdAt TEXT NOT NULL
                 )
+                """
+        );
+        jdbc.update(
+                """
+                UPDATE client_notes SET appointmentId = NULL
+                WHERE appointmentId IS NOT NULL AND appointmentId NOT IN (SELECT id FROM appointments)
                 """
         );
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
