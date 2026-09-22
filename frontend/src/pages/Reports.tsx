@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Banknote, CalendarCheck2, ChevronLeft, ChevronRight, Hourglass, TrendingUp } from 'lucide-react';
 import { getAllAppointments } from '../services/api';
 import type { AppointmentWithClient } from '../types';
 import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import './Reports.css';
+import { Button } from '@/components/ui/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { NativeSelect } from '@/components/ui/input';
+import { Avatar, LoadingRows, PageContainer, PageHeader, StatCard } from '@/components/ui/page';
 
 type ClientSessionRow = {
   clientId: number;
@@ -25,29 +29,43 @@ type ClientDebtRow = {
   pendingAmount: number;
 };
 
-const formatMoney = (amount: number) =>
-  `${amount.toLocaleString('tr-TR')} ₺`;
+const formatMoney = (amount: number) => `${amount.toLocaleString('tr-TR')} ₺`;
 
-const MONTHS = [
-  'Ocak',
-  'Şubat',
-  'Mart',
-  'Nisan',
-  'Mayıs',
-  'Haziran',
-  'Temmuz',
-  'Ağustos',
-  'Eylül',
-  'Ekim',
-  'Kasım',
-  'Aralık',
-];
+const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
 const parseAptDate = (dateStr: string) => {
   const part = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.slice(0, 10);
   const [year, month, day] = part.split('-').map(Number);
   return new Date(year, (month || 1) - 1, day || 1);
 };
+
+const BreakdownList = ({
+  rows,
+  showAmount = false,
+}: {
+  rows: { key: string; label: string; count: number; percent: number; color: string; amount?: number }[];
+  showAmount?: boolean;
+}) => (
+  <ul className="m-0 flex list-none flex-col gap-3.5 p-0">
+    {rows.map((row) => (
+      <li key={row.key}>
+        <div className="mb-1.5 flex items-center gap-2 text-sm">
+          <span className="size-2 rounded-full" style={{ background: row.color }} />
+          <span className="flex-1">{row.label}</span>
+          <span className="tabular-nums text-muted-foreground">
+            {row.count} · %{row.percent}
+          </span>
+          {showAmount && row.amount != null ? (
+            <span className="w-24 text-right font-medium tabular-nums">{formatMoney(row.amount)}</span>
+          ) : null}
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full transition-[width]" style={{ width: `${row.percent}%`, background: row.color }} />
+        </div>
+      </li>
+    ))}
+  </ul>
+);
 
 export const Reports = () => {
   const navigate = useNavigate();
@@ -130,20 +148,16 @@ export const Reports = () => {
     return d.getFullYear() === selectedYear;
   });
 
-  const countedThisMonth = appointmentsThisMonth.filter(
-    (a) => appointmentStatus(a.status) !== 'cancelled'
-  );
-  const countedThisYear = appointmentsThisYear.filter(
-    (a) => appointmentStatus(a.status) !== 'cancelled'
-  );
+  const countedThisMonth = appointmentsThisMonth.filter((a) => appointmentStatus(a.status) !== 'cancelled');
+  const countedThisYear = appointmentsThisYear.filter((a) => appointmentStatus(a.status) !== 'cancelled');
 
   const monthTotal = appointmentsThisMonth.length;
   const statusBreakdown = (
     [
-      { key: 'attended' as const, color: '#228b22' },
-      { key: 'no_show' as const, color: '#c0392b' },
-      { key: 'cancelled' as const, color: '#6c757d' },
-      { key: 'scheduled' as const, color: '#6c757d' },
+      { key: 'attended' as const, color: 'var(--success)' },
+      { key: 'no_show' as const, color: 'var(--destructive)' },
+      { key: 'scheduled' as const, color: 'var(--primary)' },
+      { key: 'cancelled' as const, color: 'var(--muted-foreground)' },
     ] as const
   ).map((row) => {
     const count = appointmentsThisMonth.filter((a) => appointmentStatus(a.status) === row.key).length;
@@ -180,7 +194,7 @@ export const Reports = () => {
       count: paidThisMonth.length,
       amount: earnedThisMonth,
       percent: paymentTotal === 0 ? 0 : Math.round((paidThisMonth.length / paymentTotal) * 100),
-      color: '#28a745',
+      color: 'var(--success)',
     },
     {
       key: 'pending',
@@ -188,13 +202,13 @@ export const Reports = () => {
       count: pendingThisMonth.length,
       amount: pendingMonth,
       percent: paymentTotal === 0 ? 0 : Math.round((pendingThisMonth.length / paymentTotal) * 100),
-      color: '#d4a017',
+      color: 'var(--warning)',
     },
   ];
 
   const chartData = [
-    { name: 'Kazanılan', value: earnedThisYear, fill: '#28a745' },
-    { name: 'Beklenen', value: pendingYear, fill: '#ffc107' },
+    { name: 'Tahsil edilen', value: earnedThisYear, fill: 'var(--success)' },
+    { name: 'Bekleyen', value: pendingYear, fill: 'var(--warning)' },
   ];
 
   const sessionByClient = new Map<number, ClientSessionRow>();
@@ -245,255 +259,251 @@ export const Reports = () => {
     return a.clientName.localeCompare(b.clientName, 'tr');
   });
 
-  const asOfText = format(now, "d MMM yyyy HH:mm", { locale: tr });
+  const asOfText = format(now, 'd MMM yyyy HH:mm', { locale: tr });
 
-  if (loading) {
-    return (
-      <div className="reports-container">
-        <h1 className="reports-title">Raporlar</h1>
-        <div className="reports-loading">Yükleniyor...</div>
-      </div>
-    );
-  }
+  const periodPicker = (
+    <>
+      <Button variant="outline" size="icon" onClick={goPrevMonth} aria-label="Önceki ay">
+        <ChevronLeft />
+      </Button>
+      <NativeSelect
+        className="w-auto"
+        value={selectedMonth}
+        onChange={(e) => setSelectedMonth(Number(e.target.value))}
+        aria-label="Ay"
+      >
+        {MONTHS.map((name, index) => (
+          <option key={name} value={index}>
+            {name}
+          </option>
+        ))}
+      </NativeSelect>
+      <NativeSelect
+        className="w-auto"
+        value={selectedYear}
+        onChange={(e) => setSelectedYear(Number(e.target.value))}
+        aria-label="Yıl"
+      >
+        {yearOptions.map((year) => (
+          <option key={year} value={year}>
+            {year}
+          </option>
+        ))}
+      </NativeSelect>
+      <Button variant="outline" size="icon" onClick={goNextMonth} aria-label="Sonraki ay">
+        <ChevronRight />
+      </Button>
+      {!isCurrentPeriod ? (
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setSelectedYear(now.getFullYear());
+            setSelectedMonth(now.getMonth());
+          }}
+        >
+          Bu ay
+        </Button>
+      ) : null}
+    </>
+  );
 
   return (
-    <div className="reports-container">
-      <h1 className="reports-title">Raporlar</h1>
-      <p className="reports-subtitle">Son güncelleme: {asOfText}</p>
+    <PageContainer>
+      <PageHeader title="Raporlar" description={`Son güncelleme: ${asOfText}`} actions={periodPicker} />
 
-      <div className="reports-period">
-        <button type="button" className="reports-period-nav" onClick={goPrevMonth}>
-          ‹
-        </button>
-        <select
-          className="reports-period-select"
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(Number(e.target.value))}
-          aria-label="Ay"
-        >
-          {MONTHS.map((name, index) => (
-            <option key={name} value={index}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="reports-period-select"
-          value={selectedYear}
-          onChange={(e) => setSelectedYear(Number(e.target.value))}
-          aria-label="Yıl"
-        >
-          {yearOptions.map((year) => (
-            <option key={year} value={year}>
-              {year}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="reports-period-nav" onClick={goNextMonth}>
-          ›
-        </button>
-        {!isCurrentPeriod ? (
-          <button
-            type="button"
-            className="reports-period-today"
-            onClick={() => {
-              setSelectedYear(now.getFullYear());
-              setSelectedMonth(now.getMonth());
-            }}
-          >
-            Bu aya dön
-          </button>
-        ) : null}
-      </div>
+      {loading ? (
+        <Card>
+          <LoadingRows rows={5} />
+        </Card>
+      ) : (
+        <>
+          <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Özet">
+            <StatCard
+              icon={CalendarCheck2}
+              label={`${MONTHS[selectedMonth]} seansları`}
+              value={String(countedThisMonth.length)}
+              hint={`${selectedYear} toplamı: ${countedThisYear.length} · iptaller hariç`}
+            />
+            <StatCard
+              icon={Banknote}
+              label={`${MONTHS[selectedMonth]} tahsilat`}
+              value={formatMoney(earnedThisMonth)}
+              hint={`${paidThisMonth.length} seans ödendi`}
+              tone="success"
+            />
+            <StatCard
+              icon={Hourglass}
+              label={`${MONTHS[selectedMonth]} bekleyen`}
+              value={formatMoney(pendingMonth)}
+              hint={`${pendingThisMonth.length} seans bekliyor`}
+              tone={pendingMonth > 0 ? 'warning' : 'default'}
+            />
+            <StatCard
+              icon={TrendingUp}
+              label={`${selectedYear} tahsilat`}
+              value={formatMoney(earnedThisYear)}
+              hint={`${paidThisYear.length} seans ödendi`}
+              tone="success"
+            />
+          </section>
 
-      <div className="reports-grid">
-        <div className="report-card">
-          <h3 className="report-card-title">{monthLabel} randevu</h3>
-          <p className="report-card-value report-card-value-neutral">{countedThisMonth.length}</p>
-          <span className="report-card-meta">İptaller hariç · {monthLabel}</span>
-        </div>
-
-        <div className="report-card">
-          <h3 className="report-card-title">{selectedYear} randevu</h3>
-          <p className="report-card-value report-card-value-neutral">{countedThisYear.length}</p>
-          <span className="report-card-meta">İptaller hariç · {selectedYear}</span>
-        </div>
-
-        <div className="report-card">
-          <h3 className="report-card-title">{selectedYear} tahsil edilen</h3>
-          <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisYear)}</p>
-          <span className="report-card-meta">{paidThisYear.length} seans ödendi · {selectedYear}</span>
-        </div>
-
-        <div className="report-card">
-          <h3 className="report-card-title">{monthLabel} tahsil edilen</h3>
-          <p className="report-card-value report-card-value-positive">{formatMoney(earnedThisMonth)}</p>
-          <span className="report-card-meta">{paidThisMonth.length} seans ödendi · {monthLabel}</span>
-        </div>
-
-        <div className="report-card report-card-status">
-          <h3 className="report-card-title">{monthLabel} durum</h3>
-          {monthTotal === 0 ? (
-            <p className="report-status-empty">Bu ayda randevu yok.</p>
-          ) : (
-            <ul className="report-status-list">
-              {statusBreakdown.map((row) => (
-                <li key={row.key}>
-                  <span className="report-status-dot" style={{ background: row.color }} />
-                  <span className="report-status-label">{row.label}</span>
-                  <span className="report-status-count">{row.count}</span>
-                  <span className="report-status-percent">{row.percent}%</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <span className="report-card-meta">Yüzde tüm randevulara göre · {monthLabel}</span>
-        </div>
-
-        <div className="report-card report-card-status">
-          <h3 className="report-card-title">{monthLabel} ödeme</h3>
-          {paymentTotal === 0 ? (
-            <p className="report-status-empty">Bu ayda sayılan randevu yok.</p>
-          ) : (
-            <ul className="report-status-list with-amount">
-              {paymentBreakdown.map((row) => (
-                <li key={row.key}>
-                  <span className="report-status-dot" style={{ background: row.color }} />
-                  <span className="report-status-label">{row.label}</span>
-                  <span className="report-status-count">{row.count}</span>
-                  <span className="report-status-percent">{row.percent}%</span>
-                  <span className="report-status-amount">{formatMoney(row.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <span className="report-card-meta">İptaller hariç · ödeme işareti değişince güncellenir · {monthLabel}</span>
-        </div>
-
-        <div className="report-card">
-          <h3 className="report-card-title">{monthLabel} bekleyen</h3>
-          <p className="report-card-value report-card-value-pending">{formatMoney(pendingMonth)}</p>
-          <span className="report-card-meta">{pendingThisMonth.length} seans bekliyor · {monthLabel}</span>
-        </div>
-        
-        <div className="report-card report-card-chart">
-          <h3 className="report-card-title">{selectedYear} kazanılan vs beklenen</h3>
-          <div className="report-chart-wrapper">
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={2}
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={index} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number | undefined) => formatMoney(value ?? 0)}
-                  contentStyle={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                  }}
-                  labelStyle={{ color: 'var(--text-primary)' }}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="mb-6 grid gap-6 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>Seans durumu</CardTitle>
+                  <CardDescription className="mt-1">{monthLabel} · tüm randevular</CardDescription>
+                </div>
+              </CardHeader>
+              <div className="p-5">
+                {monthTotal === 0 ? (
+                  <p className="m-0 text-sm text-muted-foreground">Bu ayda randevu yok.</p>
+                ) : (
+                  <BreakdownList rows={statusBreakdown} />
+                )}
+              </div>
+            </Card>
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>Ödeme durumu</CardTitle>
+                  <CardDescription className="mt-1">{monthLabel} · iptaller hariç</CardDescription>
+                </div>
+              </CardHeader>
+              <div className="p-5">
+                {paymentTotal === 0 ? (
+                  <p className="m-0 text-sm text-muted-foreground">Bu ayda sayılan randevu yok.</p>
+                ) : (
+                  <BreakdownList rows={paymentBreakdown} showAmount />
+                )}
+              </div>
+            </Card>
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>{selectedYear} tahsilat ve bekleyen</CardTitle>
+                  <CardDescription className="mt-1">Yıl toplamı</CardDescription>
+                </div>
+              </CardHeader>
+              <div className="px-2 pb-2">
+                {earnedThisYear + pendingYear === 0 ? (
+                  <p className="m-0 px-3 py-5 text-sm text-muted-foreground">Bu yıl için veri yok.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        stroke="var(--card)"
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell key={index} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number | undefined) => formatMoney(value ?? 0)}
+                        contentStyle={{
+                          background: 'var(--popover)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                          fontSize: 13,
+                        }}
+                        itemStyle={{ color: 'var(--popover-foreground)' }}
+                      />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </Card>
           </div>
-          <span className="report-card-meta">{selectedYear}</span>
-        </div>
-      </div>
 
-      <div className="reports-client-grid">
-        <div className="report-card report-card-table">
-          <h3 className="report-card-title">{monthLabel} danışan seansları</h3>
-          {sessionRows.length === 0 ? (
-            <p className="report-status-empty">Bu ayda sayılan randevu yok.</p>
-          ) : (
-            <div className="reports-table-wrap">
-              <table className="reports-table">
-                <thead>
-                  <tr>
-                    <th>Danışan</th>
-                    <th>Seans</th>
-                    <th>Geldi</th>
-                    <th>Gelmedi</th>
-                    <th>Ödendi</th>
-                    <th>Bekleyen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessionRows.map((row) => (
-                    <tr key={row.clientId}>
-                      <td>
-                        <button
-                          type="button"
-                          className="reports-client-link"
-                          onClick={() => navigate(`/client/${row.clientId}`)}
-                        >
-                          {row.clientName}
-                        </button>
-                      </td>
-                      <td>{row.sessions}</td>
-                      <td>{row.attended}</td>
-                      <td>{row.noShow}</td>
-                      <td>{row.paid}</td>
-                      <td>{formatMoney(row.pendingAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <span className="report-card-meta">İptaller hariç · çok seans üstte · {monthLabel}</span>
-        </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div>
+                  <CardTitle>Danışan seansları</CardTitle>
+                  <CardDescription className="mt-1">{monthLabel} · iptaller hariç</CardDescription>
+                </div>
+              </CardHeader>
+              {sessionRows.length === 0 ? (
+                <p className="m-0 px-5 py-5 text-sm text-muted-foreground">Bu ayda sayılan randevu yok.</p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-0 border-y border-solid bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                        <th className="px-5 py-2.5 font-medium">Danışan</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Seans</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Geldi</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Gelmedi</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Ödendi</th>
+                        <th className="px-5 py-2.5 text-right font-medium">Bekleyen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessionRows.map((row) => (
+                        <tr key={row.clientId} className="border-0 border-b border-solid last:border-b-0">
+                          <td className="px-5 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/client/${row.clientId}`)}
+                              className="flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left font-medium text-foreground [font-family:inherit] hover:underline"
+                            >
+                              <Avatar name={row.clientName} className="size-7 text-[11px]" />
+                              {row.clientName}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{row.sessions}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{row.attended}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{row.noShow}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{row.paid}</td>
+                          <td className="px-5 py-2.5 text-right tabular-nums">{formatMoney(row.pendingAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
 
-        <div className="report-card report-card-table">
-          <h3 className="report-card-title">Borçlu danışanlar</h3>
-          {debtRows.length === 0 ? (
-            <p className="report-status-empty">Bekleyen ödeme yok.</p>
-          ) : (
-            <div className="reports-table-wrap">
-              <table className="reports-table">
-                <thead>
-                  <tr>
-                    <th>Danışan</th>
-                    <th>Bekleyen seans</th>
-                    <th>Tutar</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div>
+                  <CardTitle>Borçlu danışanlar</CardTitle>
+                  <CardDescription className="mt-1">Ödenmemiş seanslar · tüm zamanlar</CardDescription>
+                </div>
+              </CardHeader>
+              {debtRows.length === 0 ? (
+                <p className="m-0 px-5 py-5 text-sm text-muted-foreground">Bekleyen ödeme yok.</p>
+              ) : (
+                <ul className="m-0 mt-3 list-none divide-y divide-border p-0">
                   {debtRows.map((row) => (
-                    <tr key={row.clientId}>
-                      <td>
-                        <button
-                          type="button"
-                          className="reports-client-link"
-                          onClick={() => navigate(`/client/${row.clientId}`)}
-                        >
-                          {row.clientName}
-                        </button>
-                      </td>
-                      <td>{row.pendingCount}</td>
-                      <td className="reports-debt-amount">{formatMoney(row.pendingAmount)}</td>
-                    </tr>
+                    <li key={row.clientId} className="flex items-center gap-3 px-5 py-3">
+                      <Avatar name={row.clientName} className="size-8 text-xs" />
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/client/${row.clientId}`)}
+                        className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 text-left text-foreground [font-family:inherit]"
+                      >
+                        <span className="block truncate text-sm font-medium hover:underline">{row.clientName}</span>
+                        <span className="block text-[13px] text-muted-foreground">{row.pendingCount} seans</span>
+                      </button>
+                      <span className="text-sm font-semibold tabular-nums text-warning">{formatMoney(row.pendingAmount)}</span>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <span className="report-card-meta">Ödemeler ile aynı kural: ödenmemiş, iptal hariç, tüm zamanlar</span>
-        </div>
-      </div>
-    </div>
+                </ul>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+    </PageContainer>
   );
 };

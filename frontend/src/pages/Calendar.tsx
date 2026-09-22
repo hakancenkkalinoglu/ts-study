@@ -32,8 +32,12 @@ import { appointmentStatus, sessionDuration, therapistColor } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmDialog';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Lock, Plus, UserRound } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog';
+import { NativeSelect } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import './Calendar.css';
-import '../components/AddClientModal.css';
 
 type ViewMode = 'day' | 'week' | 'month';
 type CalendarScope = 'mine' | 'clinic';
@@ -201,10 +205,11 @@ const visibleRange = (viewMode: ViewMode, currentDate: Date) => {
 export const Calendar = () => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
-  const peekRef = useRef<HTMLDivElement>(null);
   const chooserRef = useRef<HTMLDivElement>(null);
   const [currentDate, setCurrentDate] = useState(() => parseStoredDate(readCalendarState()?.currentDate));
-  const [viewMode, setViewMode] = useState<ViewMode>(() => readCalendarState()?.viewMode ?? 'month');
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    () => readCalendarState()?.viewMode ?? (window.innerWidth < 768 ? 'day' : 'month')
+  );
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,17 +264,7 @@ export const Calendar = () => {
     startMinutes: number;
     duration: number;
   } | null>(null);
-  useFocusTrap(Boolean(peekAppointment), peekRef);
   useFocusTrap(Boolean(slotChooser), chooserRef);
-
-  useEffect(() => {
-    if (!peekAppointment) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPeekAppointment(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [peekAppointment]);
 
   const loadAppointments = useCallback(async () => {
     const range = visibleRange(viewMode, currentDate);
@@ -719,7 +714,7 @@ export const Calendar = () => {
     const showNow = nowMinutes >= startMinutes && nowMinutes <= endMinutes;
 
     return (
-      <div className="time-grid">
+      <div className={cn('time-grid', days.length > 1 && 'is-week')}>
         <div
           className="time-grid-header"
           style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))` }}
@@ -921,84 +916,64 @@ export const Calendar = () => {
   };
 
   return (
-    <div className="calendar-container">
-      <div className="calendar-header">
-        <div className="calendar-toolbar">
-          <button type="button" className="calendar-nav-btn" onClick={goPrev}>
-            ‹
-          </button>
-          <button type="button" className="calendar-today-btn" onClick={goToday}>
+    <div className="flex h-[calc(100dvh-8.5rem)] flex-col px-3 py-4 md:h-screen md:px-6 md:py-5">
+      <div className="mb-4 flex shrink-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={goPrev} aria-label="Önceki">
+            <ChevronLeft />
+          </Button>
+          <Button variant="outline" onClick={goToday}>
             Bugün
-          </button>
-          <button type="button" className="calendar-nav-btn" onClick={goNext}>
-            ›
-          </button>
-          <h2 className="calendar-title">{getTitle()}</h2>
+          </Button>
+          <Button variant="outline" size="icon" onClick={goNext} aria-label="Sonraki">
+            <ChevronRight />
+          </Button>
+          <h1 className="m-0 ml-2 min-w-0 truncate text-lg font-semibold tracking-tight md:text-xl">{getTitle()}</h1>
         </div>
-        <button
-          type="button"
-          className="calendar-add-btn"
-          onClick={() => openAddModal(currentDate)}
-        >
-          + Randevu Ekle
-        </button>
-        {clinic ? (
-          <div className="calendar-view-switcher">
-            <button
-              type="button"
-              className={`view-btn ${calendarScope === 'mine' ? 'active' : ''}`}
-              onClick={() => setCalendarScope('mine')}
-            >
-              Ben
-            </button>
-            <button
-              type="button"
-              className={`view-btn ${calendarScope === 'clinic' ? 'active' : ''}`}
-              onClick={() => setCalendarScope('clinic')}
-            >
-              Tüm klinik
-            </button>
-            <select
-              className="calendar-room-filter"
-              value={roomFilter}
-              onChange={(e) => setRoomFilter(Number(e.target.value))}
-            >
-              <option value={0}>Tüm odalar</option>
-              {clinic.rooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <div className="calendar-view-switcher">
-          <button
-            type="button"
-            className={`view-btn ${viewMode === 'day' ? 'active' : ''}`}
-            onClick={() => setViewMode('day')}
-          >
-            Günlük
-          </button>
-          <button
-            type="button"
-            className={`view-btn ${viewMode === 'week' ? 'active' : ''}`}
-            onClick={() => setViewMode('week')}
-          >
-            Haftalık
-          </button>
-          <button
-            type="button"
-            className={`view-btn ${viewMode === 'month' ? 'active' : ''}`}
-            onClick={() => setViewMode('month')}
-          >
-            Aylık
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {clinic ? (
+            <>
+              <SegmentedControl
+                value={calendarScope}
+                onChange={setCalendarScope}
+                options={[
+                  { value: 'mine', label: 'Ben' },
+                  { value: 'clinic', label: 'Tüm klinik' },
+                ]}
+              />
+              <NativeSelect
+                className="w-auto"
+                value={roomFilter}
+                onChange={(e) => setRoomFilter(Number(e.target.value))}
+                aria-label="Oda filtresi"
+              >
+                <option value={0}>Tüm odalar</option>
+                {clinic.rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </>
+          ) : null}
+          <SegmentedControl
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { value: 'day', label: 'Gün' },
+              { value: 'week', label: 'Hafta' },
+              { value: 'month', label: 'Ay' },
+            ]}
+          />
+          <Button onClick={() => openAddModal(currentDate)} className="ml-auto xl:ml-0">
+            <Plus />
+            Randevu
+          </Button>
         </div>
       </div>
 
       {loading ? (
-        <div className="calendar-loading">Yükleniyor...</div>
+        <div className="calendar-content items-center justify-center text-sm text-muted-foreground">Yükleniyor...</div>
       ) : (
         <div className="calendar-content">
           {viewMode === 'day' && renderDayView()}
@@ -1034,70 +1009,104 @@ export const Calendar = () => {
         appointment={updateModalAppointment}
       />
       {slotChooser ? (
-        <div className="slot-chooser-overlay" onClick={closeSlotChooser}>
+        <div className="fixed inset-0 z-40" onClick={closeSlotChooser}>
           <div
             ref={chooserRef}
-            className="slot-chooser"
+            className="fixed flex w-56 flex-col rounded-lg border border-solid bg-popover p-1 font-sans text-popover-foreground shadow-lg outline-none animate-in fade-in-0 zoom-in-95"
             role="dialog"
             aria-modal="true"
             aria-label="Saat işlemi"
             tabIndex={-1}
             style={{
-              left: Math.max(8, Math.min(slotChooser.x, window.innerWidth - 228)),
-              top: Math.max(8, Math.min(slotChooser.y, window.innerHeight - 148)),
+              left: Math.max(8, Math.min(slotChooser.x, window.innerWidth - 232)),
+              top: Math.max(8, Math.min(slotChooser.y, window.innerHeight - 140)),
             }}
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="slot-chooser-meta">
-              {format(slotChooser.day, 'd MMMM', { locale: tr })} · {slotChooser.time} · {slotChooser.duration} dk
+            <p className="m-0 px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+              {format(slotChooser.day, 'd MMMM EEEE', { locale: tr })} · {slotChooser.time} · {slotChooser.duration} dk
             </p>
             <button
               type="button"
+              className="flex cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-sm text-foreground [font-family:inherit] hover:bg-accent"
               onClick={() => {
                 const { day, time, duration } = slotChooser;
                 closeSlotChooser();
                 openAddModal(day, time, duration);
               }}
             >
+              <CalendarPlus className="size-4 text-muted-foreground" />
               Randevu ekle
             </button>
             <button
               type="button"
+              className="flex cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-sm text-foreground [font-family:inherit] hover:bg-accent"
               onClick={() => {
                 void addClosedSlot(slotChooser.day, slotChooser.time, slotChooser.duration);
               }}
             >
+              <Lock className="size-4 text-muted-foreground" />
               Bu saati kapat
             </button>
           </div>
         </div>
       ) : null}
-      {peekAppointment ? (
-        <div className="modal-overlay" onClick={() => setPeekAppointment(null)}>
-          <div
-            ref={peekRef}
-            className="modal-content calendar-peek"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="peek-title"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
+      <Dialog open={peekAppointment !== null} onOpenChange={(open) => (open ? null : setPeekAppointment(null))}>
+        {peekAppointment ? (
+          <DialogContent
+            title="Meslektaş seansı"
+            description="Bu seans bir meslektaşınıza ait. Danışan bilgisi, notlar ve düzenleme kapalıdır."
+            className="max-w-sm"
           >
-            <div className="modal-header">
-              <h2 id="peek-title">Klinik seansı</h2>
-              <button type="button" className="close-button" onClick={() => setPeekAppointment(null)}>
-                ×
-              </button>
-            </div>
-            <p>
-              {formatTime(peekAppointment.appointmentTime)} · {clinicSafeLabel(peekAppointment)}
-            </p>
-            {peekAppointment.roomName ? <p>Oda: {peekAppointment.roomName}</p> : null}
-            {peekAppointment.therapistName ? <p>Terapist: {peekAppointment.therapistName}</p> : null}
-            <p className="calendar-peek-hint">Bu seans bir meslektaşa ait. Notlar ve düzenleme kapalı.</p>
-          </div>
-        </div>
-      ) : null}
+            <DialogBody className="gap-3 text-sm">
+              <div className="flex items-center gap-3">
+                <CalendarPlus className="size-4 text-muted-foreground" />
+                {format(parseStoredDate(peekAppointment.appointmentDate.slice(0, 10)), 'd MMMM EEEE', { locale: tr })} ·{' '}
+                {formatTime(peekAppointment.appointmentTime)} · {sessionDuration(peekAppointment.durationMinutes)} dk
+              </div>
+              {peekAppointment.roomName ? (
+                <div className="flex items-center gap-3">
+                  <DoorOpen className="size-4 text-muted-foreground" />
+                  {peekAppointment.roomName}
+                </div>
+              ) : null}
+              {peekAppointment.therapistName ? (
+                <div className="flex items-center gap-3">
+                  <UserRound className="size-4 text-muted-foreground" />
+                  {peekAppointment.therapistName}
+                </div>
+              ) : null}
+            </DialogBody>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 };
+
+const SegmentedControl = <T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+}) => (
+  <div className="inline-flex rounded-lg border border-solid bg-muted/60 p-0.5">
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type="button"
+        aria-pressed={value === option.value}
+        onClick={() => onChange(option.value)}
+        className={cn(
+          'cursor-pointer rounded-md border-0 px-3 py-1.5 text-sm font-medium [font-family:inherit] transition-colors',
+          value === option.value ? 'bg-card text-foreground shadow-sm' : 'bg-transparent text-muted-foreground hover:text-foreground'
+        )}
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
+);

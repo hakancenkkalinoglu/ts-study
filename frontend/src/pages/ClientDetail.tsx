@@ -1,8 +1,29 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, type FormEvent, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { tr } from 'date-fns/locale';
+import {
+  ArrowLeft,
+  CalendarPlus,
+  Check,
+  ChevronDown,
+  ClipboardList,
+  FileText,
+  Loader2,
+  Mail,
+  MoreHorizontal,
+  NotebookPen,
+  Package,
+  Paperclip,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmDialog';
-import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   getClient,
   getClientNotes,
@@ -23,6 +44,7 @@ import {
 import type { Appointment, AppointmentStatus, Client, ClinicRoom, Note } from '../types';
 import {
   APPOINTMENT_STATUSES,
+  appointmentPaid,
   appointmentStatus,
   appointmentStatusLabel,
   sessionDuration,
@@ -32,11 +54,40 @@ import {
 import { SessionPackages } from '../components/SessionPackages';
 import { ClientInventories } from '../components/ClientInventories';
 import { istanbulTodayYmd } from '../utils/dates';
-import './ClientDetail.css';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Field, FormError, Input, NativeSelect, Switch, Textarea } from '@/components/ui/input';
+import { Avatar, EmptyState, LoadingRows, PageContainer } from '@/components/ui/page';
+import { cn } from '@/lib/utils';
+
+type Tab = 'appointments' | 'notes' | 'packages' | 'inventories';
+
+type AppointmentDialogState = { mode: 'new' } | { mode: 'edit'; id: number } | null;
+
+const STATUS_BADGE: Record<AppointmentStatus, 'neutral' | 'success' | 'danger' | 'muted'> = {
+  scheduled: 'neutral',
+  attended: 'success',
+  no_show: 'danger',
+  cancelled: 'muted',
+};
 
 const toDateInputValue = (value: string | null | undefined): string => {
   if (!value) return '';
   return value.includes('T') ? value.split('T')[0] : value.slice(0, 10);
+};
+
+const parseYmd = (value: string) => {
+  const [year, month, day] = toDateInputValue(value).split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
 };
 
 const emptyAppointmentForm = () => ({
@@ -60,47 +111,41 @@ const emptyClientForm = () => ({
   emergencyPhone: '',
 });
 
+const emptyNoteForm = () => ({ title: '', content: '', noteDate: istanbulTodayYmd() });
+
+const InfoItem = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="min-w-0">
+    <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+    <dd className="m-0 mt-0.5 truncate text-sm">{children}</dd>
+  </div>
+);
+
 export const ClientDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
-  const notesModalRef = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notesByAppointment, setNotesByAppointment] = useState<Record<number, Note[]>>({});
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
-  const [showAllNotesModal, setShowAllNotesModal] = useState(false);
+  const [tab, setTab] = useState<Tab>('appointments');
   const [expandedAppointments, setExpandedAppointments] = useState<Set<number>>(new Set());
   const [showNoteFormFor, setShowNoteFormFor] = useState<number | null>(null);
-  const [editingAppointmentId, setEditingAppointmentId] = useState<number | null>(null);
+  const [appointmentDialog, setAppointmentDialog] = useState<AppointmentDialogState>(null);
+  const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [clientForm, setClientForm] = useState(emptyClientForm());
   const [savingClient, setSavingClient] = useState(false);
   const [clientFormError, setClientFormError] = useState<string | null>(null);
-
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointmentForm);
   const [rooms, setRooms] = useState<ClinicRoom[]>([]);
-  const [noteForm, setNoteForm] = useState({
-    title: '',
-    content: '',
-    noteDate: istanbulTodayYmd(),
-  });
+  const [noteForm, setNoteForm] = useState(emptyNoteForm);
+  const [looseNote, setLooseNote] = useState(emptyNoteForm);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteSearch, setNoteSearch] = useState('');
-  useFocusTrap(showAllNotesModal, notesModalRef);
-
-  useEffect(() => {
-    if (!showAllNotesModal) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowAllNotesModal(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showAllNotesModal]);
 
   const fillClientForm = (foundClient: Client) => {
     setClientForm({
@@ -125,14 +170,14 @@ export const ClientDetail = () => {
         getAppointments(foundClient.id),
         getClientNotes(foundClient.id),
       ]);
-        setAppointments(appointmentsData);
-        setAllNotes(notesData);
-        const notesMap: Record<number, Note[]> = {};
-        for (const note of notesData) {
-          if (note.appointmentId == null) continue;
-          notesMap[note.appointmentId] = [...(notesMap[note.appointmentId] || []), note];
-        }
-        setNotesByAppointment(notesMap);
+      setAppointments(appointmentsData);
+      setAllNotes(notesData);
+      const notesMap: Record<number, Note[]> = {};
+      for (const note of notesData) {
+        if (note.appointmentId == null) continue;
+        notesMap[note.appointmentId] = [...(notesMap[note.appointmentId] || []), note];
+      }
+      setNotesByAppointment(notesMap);
     } catch (error) {
       console.error('Error loading client data:', error);
       setClient(null);
@@ -151,64 +196,69 @@ export const ClientDetail = () => {
       .catch(() => setRooms([]));
   }, []);
 
-  const handleAddAppointment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!client) return;
+  const openNewAppointment = () => {
+    setAppointmentForm(emptyAppointmentForm());
+    setAppointmentError(null);
+    setAppointmentDialog({ mode: 'new' });
+  };
 
+  const startEditAppointment = (apt: Appointment) => {
+    setAppointmentForm({
+      appointmentDate: toDateInputValue(apt.appointmentDate),
+      appointmentTime: apt.appointmentTime || '09:00',
+      title: apt.title || '',
+      isPaid: appointmentPaid(apt.isPaid),
+      status: appointmentStatus(apt.status),
+      roomId: apt.roomId || 0,
+      durationMinutes: sessionDuration(apt.durationMinutes),
+      sessionFee: apt.sessionFee ?? '',
+    });
+    setAppointmentError(null);
+    setAppointmentDialog({ mode: 'edit', id: apt.id });
+  };
+
+  const handleSaveAppointment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!client || !appointmentDialog) return;
+    setAppointmentError(null);
     try {
       setSubmitting(true);
-      await createAppointment({
-        clientId: client.id,
-        appointmentDate: appointmentForm.appointmentDate,
-        appointmentTime: appointmentForm.appointmentTime,
-        title: appointmentForm.title || undefined,
-        isPaid: appointmentForm.isPaid,
-        roomId: appointmentForm.roomId || undefined,
-        durationMinutes: sessionDuration(appointmentForm.durationMinutes),
-        sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
-      });
+      if (appointmentDialog.mode === 'new') {
+        await createAppointment({
+          clientId: client.id,
+          appointmentDate: appointmentForm.appointmentDate,
+          appointmentTime: appointmentForm.appointmentTime,
+          title: appointmentForm.title || undefined,
+          isPaid: appointmentForm.isPaid,
+          roomId: appointmentForm.roomId || undefined,
+          durationMinutes: sessionDuration(appointmentForm.durationMinutes),
+          sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
+        });
+      } else {
+        await updateAppointment(client.id, appointmentDialog.id, {
+          appointmentDate: appointmentForm.appointmentDate,
+          appointmentTime: appointmentForm.appointmentTime,
+          title: appointmentForm.title,
+          isPaid: appointmentForm.isPaid,
+          status: appointmentForm.status,
+          roomId: appointmentForm.roomId,
+          durationMinutes: sessionDuration(appointmentForm.durationMinutes),
+          sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
+          clearSessionFee: appointmentForm.sessionFee === '',
+        });
+      }
+      setAppointmentDialog(null);
       setAppointmentForm(emptyAppointmentForm());
-      setShowAppointmentForm(false);
       loadClientData();
     } catch (error: unknown) {
-      console.error('Error adding appointment:', error);
-      showToast(apiErrorMessage(error, 'Randevu eklenirken bir hata oluştu.'), 'error');
+      console.error('Error saving appointment:', error);
+      setAppointmentError(apiErrorMessage(error, 'Randevu kaydedilirken bir hata oluştu.'));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleUpdateAppointment = async (appointmentId: number, e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!client) return;
-
-    try {
-      setSubmitting(true);
-      await updateAppointment(client.id, appointmentId, {
-        appointmentDate: appointmentForm.appointmentDate,
-        appointmentTime: appointmentForm.appointmentTime,
-        title: appointmentForm.title,
-        isPaid: appointmentForm.isPaid,
-        status: appointmentForm.status,
-        roomId: appointmentForm.roomId,
-        durationMinutes: sessionDuration(appointmentForm.durationMinutes),
-        sessionFee: appointmentForm.sessionFee === '' ? undefined : Number(appointmentForm.sessionFee),
-        clearSessionFee: appointmentForm.sessionFee === '',
-      });
-      setEditingAppointmentId(null);
-      setAppointmentForm(emptyAppointmentForm());
-      loadClientData();
-    } catch (error: unknown) {
-      console.error('Error updating appointment:', error);
-      showToast(apiErrorMessage(error, 'Randevu güncellenirken bir hata oluştu.'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteAppointment = async (appointmentId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCancelAppointment = async (appointmentId: number) => {
     if (!client) return;
     const ok = await confirm({
       title: 'Randevuyu iptal et',
@@ -217,10 +267,8 @@ export const ClientDetail = () => {
       danger: true,
     });
     if (!ok) return;
-
     try {
       await updateAppointment(client.id, appointmentId, { status: 'cancelled' });
-      setEditingAppointmentId(null);
       loadClientData();
     } catch (error) {
       console.error('Error cancelling appointment:', error);
@@ -228,27 +276,9 @@ export const ClientDetail = () => {
     }
   };
 
-  const startEditAppointment = (apt: Appointment, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedAppointments((prev) => new Set(prev).add(apt.id));
-    setEditingAppointmentId(apt.id);
-    const dateStr = apt.appointmentDate.includes('T') ? apt.appointmentDate.split('T')[0] : apt.appointmentDate;
-    setAppointmentForm({
-      appointmentDate: dateStr,
-      appointmentTime: apt.appointmentTime || '09:00',
-      title: apt.title || '',
-      isPaid: !!(apt.isPaid ?? 0),
-      status: appointmentStatus(apt.status),
-      roomId: apt.roomId || 0,
-      durationMinutes: sessionDuration(apt.durationMinutes),
-      sessionFee: apt.sessionFee ?? '',
-    });
-  };
-
-  const handleAddNoteToAppointment = async (appointmentId: number, e: React.FormEvent) => {
+  const handleAddNoteToAppointment = async (appointmentId: number, e: FormEvent) => {
     e.preventDefault();
-    if (!client || !noteForm.content) return;
-
+    if (!client || !noteForm.content.trim()) return;
     try {
       setSubmitting(true);
       await createAppointmentNote(client.id, appointmentId, {
@@ -260,24 +290,25 @@ export const ClientDetail = () => {
       loadClientData();
     } catch (error) {
       console.error('Error adding note:', error);
-      showToast('Not eklenirken bir hata oluştu.', 'error');
+      showToast(apiErrorMessage(error, 'Not eklenirken bir hata oluştu.'), 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleAddStandaloneNote = async (e: React.FormEvent) => {
+  const handleAddStandaloneNote = async (e: FormEvent) => {
     e.preventDefault();
-    if (!client || !noteForm.content.trim()) return;
+    if (!client || !looseNote.content.trim()) return;
     try {
       setSubmitting(true);
       await createNote({
         clientId: client.id,
-        title: noteForm.title || undefined,
-        content: noteForm.content.trim(),
-        noteDate: noteForm.noteDate,
+        title: looseNote.title || undefined,
+        content: looseNote.content.trim(),
+        noteDate: looseNote.noteDate,
       });
-      resetNoteForm();
+      setLooseNote(emptyNoteForm());
+      showToast('Not kaydedildi.');
       loadClientData();
     } catch (error) {
       showToast(apiErrorMessage(error, 'Not eklenirken bir hata oluştu.'), 'error');
@@ -296,24 +327,49 @@ export const ClientDetail = () => {
     }
   };
 
+  const handleDownloadFile = async (note: Note) => {
+    if (!client) return;
+    try {
+      await downloadNoteFile(client.id, note.id, note.fileName);
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Ek indirilemedi.'), 'error');
+    }
+  };
+
+  const handleDeleteFile = async (note: Note) => {
+    if (!client) return;
+    const ok = await confirm({
+      title: 'Eki sil',
+      message: `${note.fileName || 'Ek'} silinsin mi?`,
+      confirmLabel: 'Sil',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteNoteFile(client.id, note.id);
+      loadClientData();
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Ek silinemedi.'), 'error');
+    }
+  };
+
   const resetNoteForm = () => {
-    setNoteForm({ title: '', content: '', noteDate: istanbulTodayYmd() });
+    setNoteForm(emptyNoteForm());
     setEditingNoteId(null);
     setShowNoteFormFor(null);
   };
 
   const startEditNote = (note: Note) => {
-    const dateStr = note.noteDate.includes('T') ? note.noteDate.split('T')[0] : note.noteDate.slice(0, 10);
     setEditingNoteId(note.id);
     setShowNoteFormFor(null);
     setNoteForm({
       title: note.title || '',
       content: note.content,
-      noteDate: dateStr,
+      noteDate: toDateInputValue(note.noteDate),
     });
   };
 
-  const handleUpdateNote = async (e: React.FormEvent) => {
+  const handleUpdateNote = async (e: FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!client || editingNoteId == null || !noteForm.content.trim()) return;
@@ -364,7 +420,7 @@ export const ClientDetail = () => {
     });
   };
 
-  const handleSaveClient = async (e: React.FormEvent) => {
+  const handleSaveClient = async (e: FormEvent) => {
     e.preventDefault();
     if (!client) return;
     const name = clientForm.name.trim();
@@ -385,6 +441,7 @@ export const ClientDetail = () => {
         emergencyPhone: clientForm.emergencyPhone,
       });
       setEditingClient(false);
+      showToast('Danışan bilgileri kaydedildi.');
       loadClientData();
     } catch (error) {
       console.error('Error updating client:', error);
@@ -403,772 +460,629 @@ export const ClientDetail = () => {
   };
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('tr-TR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    if (!dateString) return '–';
+    return new Date(dateString).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  const renderNoteCard = (note: Note) => {
-    if (editingNoteId === note.id) {
-      return (
-        <form key={note.id} className="note-form" onSubmit={handleUpdateNote}>
-          <div className="form-group">
-            <label>Başlık (opsiyonel)</label>
-            <input
-              type="text"
-              value={noteForm.title}
-              onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label>İçerik *</label>
-            <textarea
-              value={noteForm.content}
-              onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
-              rows={4}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>Tarih</label>
-            <input
-              type="date"
-              value={noteForm.noteDate}
-              onChange={(e) => setNoteForm({ ...noteForm, noteDate: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-actions-inline">
-            <button type="submit" className="submit-button" disabled={submitting}>
-              {submitting ? 'Kaydediliyor...' : 'Kaydet'}
-            </button>
-            <button type="button" className="cancel-button" onClick={resetNoteForm}>
-              Vazgeç
-            </button>
-          </div>
-        </form>
-      );
-    }
-    return (
-      <div key={note.id} className="note-card">
-        <div className="note-header">
-          <h3>{note.title || 'Başlıksız Not'}</h3>
-          <span className="note-date">{formatDate(note.noteDate)}</span>
-        </div>
-        <p className="note-content">{note.content}</p>
-        {note.fileName ? (
-          <p>
-            Ek:{' '}
-            <button type="button" className="clinic-link" onClick={() => client && downloadNoteFile(client.id, note.id, note.fileName)}>
-              {note.fileName}
-            </button>
-            <button
-              type="button"
-              className="clinic-link"
-              onClick={() => client && deleteNoteFile(client.id, note.id).then(() => loadClientData())}
-            >
-              Eki sil
-            </button>
-          </p>
-        ) : (
-          <label className="clinic-link">
-            Ek yükle
-            <input
-              type="file"
-              className="sr-only"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleNoteFile(note.id, file);
-              }}
-            />
-          </label>
-        )}
-        <div className="note-footer note-footer-actions">
-          <span className="note-created">Oluşturulma: {formatDate(note.createdAt)}</span>
-          <div className="note-actions">
-            <button type="button" className="edit-apt-button" onClick={() => startEditNote(note)}>
-              Düzenle
-            </button>
-            <button type="button" className="delete-apt-button" onClick={() => handleDeleteNote(note.id)}>
-              Sil
-            </button>
-          </div>
-        </div>
+  const appointmentLabel = (appointmentId: number | null) => {
+    if (appointmentId == null) return null;
+    const apt = appointments.find((item) => item.id === appointmentId);
+    if (!apt) return null;
+    return `${format(parseYmd(apt.appointmentDate), 'd MMM yyyy', { locale: tr })} seansı`;
+  };
+
+  const renderNoteEditForm = (onSubmit: (e: FormEvent) => void, submitLabel: string, onCancel: () => void) => (
+    <form className="flex flex-col gap-3 rounded-lg border border-solid bg-muted/40 p-4" onSubmit={onSubmit} onClick={(e) => e.stopPropagation()}>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+        <Field label="Başlık" htmlFor="note-title">
+          <Input id="note-title" value={noteForm.title} onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })} placeholder="Opsiyonel" />
+        </Field>
+        <Field label="Tarih" htmlFor="note-date">
+          <Input id="note-date" type="date" value={noteForm.noteDate} onChange={(e) => setNoteForm({ ...noteForm, noteDate: e.target.value })} required />
+        </Field>
       </div>
+      <Field label="İçerik *" htmlFor="note-content">
+        <Textarea
+          id="note-content"
+          value={noteForm.content}
+          onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
+          rows={5}
+          required
+          autoFocus
+        />
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={submitting}>
+          {submitting ? <Loader2 className="animate-spin" /> : <Check />}
+          {submitLabel}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Vazgeç
+        </Button>
+      </div>
+    </form>
+  );
+
+  const renderNoteCard = (note: Note, showAppointment = false) => {
+    if (editingNoteId === note.id) {
+      return <div key={note.id}>{renderNoteEditForm(handleUpdateNote, 'Kaydet', resetNoteForm)}</div>;
+    }
+    const linked = showAppointment ? appointmentLabel(note.appointmentId) : null;
+    return (
+      <article key={note.id} className="rounded-lg border border-solid bg-card p-4">
+        <header className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="m-0 text-sm font-semibold">{note.title || 'Başlıksız not'}</h3>
+            <p className="m-0 mt-0.5 text-xs text-muted-foreground">
+              {formatDate(note.noteDate)}
+              {linked ? ` · ${linked}` : ''}
+            </p>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Not işlemleri">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => startEditNote(note)}>
+                <Pencil />
+                Düzenle
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem destructive onSelect={() => void handleDeleteNote(note.id)}>
+                <Trash2 />
+                Sil
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+        <p className="m-0 mt-3 whitespace-pre-wrap text-sm leading-relaxed">{note.content}</p>
+        <footer className="mt-3 flex flex-wrap items-center gap-2">
+          {note.fileName ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-solid bg-muted/50 py-0.5 pl-2 pr-0.5 text-xs">
+              <Paperclip className="size-3 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() => void handleDownloadFile(note)}
+                className="max-w-48 cursor-pointer truncate border-0 bg-transparent p-0 text-xs font-medium text-foreground [font-family:inherit] hover:underline"
+              >
+                {note.fileName}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFile(note)}
+                aria-label="Eki sil"
+                className="flex size-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent text-muted-foreground hover:bg-accent hover:text-destructive"
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ) : (
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+              <Paperclip className="size-3" />
+              Ek yükle
+              <input
+                type="file"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleNoteFile(note.id, file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          )}
+        </footer>
+      </article>
     );
   };
 
   if (loading) {
     return (
-      <div className="client-detail-container">
-        <div className="loading">Yükleniyor...</div>
-      </div>
+      <PageContainer>
+        <Card>
+          <LoadingRows rows={4} />
+        </Card>
+      </PageContainer>
     );
   }
 
   if (!client) {
     return (
-      <div className="client-detail-container">
-        <div className="error-state">
-          <p>Danışan bulunamadı.</p>
-          <button onClick={() => navigate('/danisanlar')} className="back-button">
-            Geri Dön
-          </button>
-        </div>
-      </div>
+      <PageContainer>
+        <Card>
+          <EmptyState
+            icon={X}
+            title="Danışan bulunamadı"
+            action={
+              <Button variant="outline" onClick={() => navigate('/danisanlar')}>
+                <ArrowLeft />
+                Danışanlara dön
+              </Button>
+            }
+          />
+        </Card>
+      </PageContainer>
     );
   }
 
-  return (
-    <div className="client-detail-container">
-      <button onClick={() => navigate('/danisanlar')} className="back-button">
-        ← Geri Dön
-      </button>
+  const filteredNotes = allNotes.filter(noteMatchesSearch);
+  const upcomingCount = appointments.filter(
+    (apt) => appointmentStatus(apt.status) === 'scheduled' && toDateInputValue(apt.appointmentDate) >= istanbulTodayYmd()
+  ).length;
 
-      <div className="client-info-card">
-        <div className="client-info-head">
-          <h1>{client.name || 'İsimsiz Danışan'}</h1>
-          {!editingClient ? (
-            <button
-              type="button"
-              className="edit-apt-button"
+  const tabs: { value: Tab; label: string; icon: typeof FileText; count?: number }[] = [
+    { value: 'appointments', label: 'Randevular', icon: CalendarPlus, count: appointments.length },
+    { value: 'notes', label: 'Notlar', icon: NotebookPen, count: allNotes.length },
+    { value: 'packages', label: 'Paketler', icon: Package },
+    { value: 'inventories', label: 'Ölçekler', icon: ClipboardList },
+  ];
+
+  return (
+    <PageContainer>
+      <Button variant="ghost" size="sm" className="-ml-2 mb-4 text-muted-foreground" onClick={() => navigate('/danisanlar')}>
+        <ArrowLeft />
+        Danışanlar
+      </Button>
+
+      <Card className="mb-6 p-5 md:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <Avatar name={client.name} className="size-14 text-lg" />
+          <div className="min-w-0 flex-1">
+            <h1 className="m-0 text-2xl font-semibold tracking-tight">{client.name || 'İsimsiz danışan'}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+              {client.phone ? (
+                <a href={`tel:${client.phone}`} className="inline-flex items-center gap-1.5 text-foreground no-underline hover:underline">
+                  <Phone className="size-3.5 text-muted-foreground" />
+                  {client.phone}
+                </a>
+              ) : null}
+              {client.email ? (
+                <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1.5 text-foreground no-underline hover:underline">
+                  <Mail className="size-3.5 text-muted-foreground" />
+                  {client.email}
+                </a>
+              ) : null}
+              {!client.phone && !client.email ? <span>İletişim bilgisi eklenmemiş</span> : null}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
               onClick={() => {
                 fillClientForm(client);
                 setClientFormError(null);
                 setEditingClient(true);
               }}
             >
+              <Pencil />
               Düzenle
-            </button>
-          ) : null}
-        </div>
-        {editingClient ? (
-          <form className="note-form" onSubmit={handleSaveClient}>
-            <div className="form-group">
-              <label htmlFor="client-name">Ad Soyad *</label>
-              <input
-                id="client-name"
-                type="text"
-                required
-                value={clientForm.name}
-                onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-email">E-posta</label>
-              <input
-                id="client-email"
-                type="email"
-                value={clientForm.email}
-                onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-birthDate">Doğum Tarihi</label>
-              <input
-                id="client-birthDate"
-                type="date"
-                value={clientForm.birthDate}
-                onChange={(e) => setClientForm({ ...clientForm, birthDate: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-agreedFee">Anlaşılan Ücret (₺)</label>
-              <input
-                id="client-agreedFee"
-                type="number"
-                min={0}
-                step={100}
-                value={clientForm.agreedFee}
-                onChange={(e) =>
-                  setClientForm({ ...clientForm, agreedFee: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-phone">Telefon</label>
-              <input
-                id="client-phone"
-                type="tel"
-                value={clientForm.phone}
-                onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-emergencyName">Acil kişi</label>
-              <input
-                id="client-emergencyName"
-                type="text"
-                value={clientForm.emergencyName}
-                onChange={(e) => setClientForm({ ...clientForm, emergencyName: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="client-emergencyPhone">Acil kişi telefonu</label>
-              <input
-                id="client-emergencyPhone"
-                type="tel"
-                value={clientForm.emergencyPhone}
-                onChange={(e) =>
-                  setClientForm({ ...clientForm, emergencyPhone: e.target.value })
-                }
-              />
-            </div>
-            {clientFormError ? <div className="error-message">{clientFormError}</div> : null}
-            <div className="form-actions-inline">
-              <button type="submit" className="submit-button" disabled={savingClient}>
-                {savingClient ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-              <button
-                type="button"
-                className="cancel-button"
-                onClick={() => {
-                  setEditingClient(false);
-                  setClientFormError(null);
-                  fillClientForm(client);
-                }}
-              >
-                Vazgeç
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="info-grid">
-            <div className="info-item">
-              <span className="info-label">E-posta:</span>
-              <span className="info-value">{client.email || '-'}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Telefon:</span>
-              <span className="info-value">
-                {client.phone ? (
-                  <a href={`tel:${client.phone}`}>{client.phone}</a>
-                ) : (
-                  '-'
-                )}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Acil kişi:</span>
-              <span className="info-value">{client.emergencyName || '-'}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Acil telefon:</span>
-              <span className="info-value">
-                {client.emergencyPhone ? (
-                  <a href={`tel:${client.emergencyPhone}`}>{client.emergencyPhone}</a>
-                ) : (
-                  '-'
-                )}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Doğum Tarihi:</span>
-              <span className="info-value">{formatDate(client.birthDate)}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Anlaşılan Ücret:</span>
-              <span className="info-value">
-                {client.agreedFee != null ? `${client.agreedFee.toLocaleString('tr-TR')} ₺` : '-'}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Kayıt Tarihi:</span>
-              <span className="info-value">{formatDate(client.createdAt)}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <SessionPackages clientId={client.id} />
-      <ClientInventories clientId={client.id} />
-
-      <div className="client-info-card">
-        <h2>Randevusuz not</h2>
-        <form className="note-form" onSubmit={handleAddStandaloneNote}>
-          <div className="form-group">
-            <label htmlFor="loose-title">Başlık</label>
-            <input
-              id="loose-title"
-              value={noteForm.title}
-              onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="loose-content">İçerik *</label>
-            <textarea
-              id="loose-content"
-              value={noteForm.content}
-              onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
-              rows={3}
-              required
-            />
-          </div>
-          <button type="submit" className="submit-button" disabled={submitting}>
-            Not kaydet
-          </button>
-        </form>
-        {allNotes.filter((note) => note.appointmentId == null).map((note) => renderNoteCard(note))}
-      </div>
-
-      <div className="appointments-section">
-        <div className="section-header">
-          <h2>Randevular</h2>
-          <div className="section-actions">
-            <input
-              type="search"
-              className="note-search-input"
-              placeholder="Notlarda ara..."
-              value={noteSearch}
-              onChange={(e) => setNoteSearch(e.target.value)}
-            />
-            <button
-              className="all-notes-button"
-              onClick={() => setShowAllNotesModal(true)}
-              title="Danışanın tüm notlarını görüntüle"
-            >
-              Tüm Notları Gör
-            </button>
-            <button
-              className="add-note-button"
-              onClick={() => setShowAppointmentForm(!showAppointmentForm)}
-            >
-              {showAppointmentForm ? 'İptal' : '+ Randevu Ekle'}
-            </button>
+            </Button>
+            <Button onClick={openNewAppointment}>
+              <CalendarPlus />
+              Randevu
+            </Button>
           </div>
         </div>
+        <dl className="m-0 mt-6 grid grid-cols-2 gap-4 border-0 border-t border-solid pt-5 sm:grid-cols-3 lg:grid-cols-5">
+          <InfoItem label="Anlaşılan ücret">
+            {client.agreedFee != null ? `${client.agreedFee.toLocaleString('tr-TR')} ₺` : '–'}
+          </InfoItem>
+          <InfoItem label="Doğum tarihi">{formatDate(client.birthDate)}</InfoItem>
+          <InfoItem label="Acil durum kişisi">{client.emergencyName || '–'}</InfoItem>
+          <InfoItem label="Acil durum telefonu">
+            {client.emergencyPhone ? (
+              <a href={`tel:${client.emergencyPhone}`} className="text-foreground no-underline hover:underline">
+                {client.emergencyPhone}
+              </a>
+            ) : (
+              '–'
+            )}
+          </InfoItem>
+          <InfoItem label="Kayıt tarihi">{formatDate(client.createdAt)}</InfoItem>
+        </dl>
+      </Card>
 
-        {showAppointmentForm && (
-          <form className="note-form appointment-form" onSubmit={handleAddAppointment}>
-            <div className="form-group">
-              <label>Randevu Tarihi *</label>
-              <input
-                type="date"
-                value={appointmentForm.appointmentDate}
-                onChange={(e) =>
-                  setAppointmentForm({ ...appointmentForm, appointmentDate: e.target.value })
-                }
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Randevu Saati *</label>
-              <input
-                type="time"
-                value={appointmentForm.appointmentTime}
-                onChange={(e) =>
-                  setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })
-                }
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="newDurationMinutes">Süre *</label>
-              <select
-                id="newDurationMinutes"
-                value={appointmentForm.durationMinutes}
-                onChange={(e) =>
-                  setAppointmentForm({
-                    ...appointmentForm,
-                    durationMinutes: sessionDuration(Number(e.target.value)),
-                  })
-                }
-              >
-                {sessionDurationOptions(appointmentForm.durationMinutes).map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label htmlFor="newSessionFee">Bu seans ücreti (₺)</label>
-              <input
-                id="newSessionFee"
-                type="number"
-                min={0}
-                placeholder="Anlaşılan ücret"
-                value={appointmentForm.sessionFee}
-                onChange={(e) =>
-                  setAppointmentForm({
-                    ...appointmentForm,
-                    sessionFee: e.target.value === '' ? '' : Number(e.target.value),
-                  })
-                }
-              />
-            </div>
-            {rooms.length > 0 ? (
-              <div className="form-group">
-                <label>Oda</label>
-                <select
-                  value={appointmentForm.roomId}
-                  onChange={(e) =>
-                    setAppointmentForm({ ...appointmentForm, roomId: Number(e.target.value) })
-                  }
-                >
-                  <option value={0}>Seçilmedi</option>
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      <div
+        className="mb-5 flex gap-1 overflow-x-auto border-0 border-b border-solid [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+      >
+        {tabs.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.value}
+            onClick={() => setTab(item.value)}
+            className={cn(
+              '-mb-px flex shrink-0 cursor-pointer items-center gap-2 border-0 border-b-2 border-solid bg-transparent px-2.5 py-2.5 text-sm font-medium [font-family:inherit] transition-colors sm:px-3',
+              tab === item.value
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <item.icon className="hidden size-4 sm:block" />
+            {item.label}
+            {item.count != null ? (
+              <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">{item.count}</span>
             ) : null}
-            <div className="form-group">
-              <label>Başlık (opsiyonel)</label>
-              <input
-                type="text"
-                value={appointmentForm.title}
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, title: e.target.value })}
-                placeholder="Örn: İlk görüşme"
-              />
-            </div>
-            <div className="form-group form-group-toggle">
-              <label>Ödeme Yapıldı mı?</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={appointmentForm.isPaid}
-                  onChange={(e) =>
-                    setAppointmentForm({ ...appointmentForm, isPaid: e.target.checked })
-                  }
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <button type="submit" className="submit-button" disabled={submitting}>
-              {submitting ? 'Ekleniyor...' : 'Randevu Ekle'}
-            </button>
-          </form>
-        )}
+          </button>
+        ))}
+      </div>
 
-        {appointments.length === 0 ? (
-          <div className="empty-notes">
-            <p>Henüz randevu eklenmemiş.</p>
-            <p className="empty-hint">Randevu ekledikten sonra her randevuya not ekleyebilirsiniz.</p>
+      {tab === 'appointments' ? (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-5 py-4">
+            <p className="m-0 text-sm text-muted-foreground">
+              {appointments.length} randevu{upcomingCount > 0 ? ` · ${upcomingCount} yaklaşan` : ''}
+            </p>
+            <Button size="sm" variant="outline" onClick={openNewAppointment}>
+              <Plus />
+              Randevu ekle
+            </Button>
           </div>
-        ) : (
-          <div className="appointments-list">
-            {appointments.map((apt) => (
-              <div key={apt.id} className="appointment-card">
-                <div
-                  className="appointment-header"
-                  onClick={() => toggleAppointmentExpand(apt.id)}
-                >
-                  <div className="appointment-info">
-                    <span className="appointment-date">{formatDate(apt.appointmentDate)}</span>
-                    {apt.appointmentTime && (
-                      <span className="appointment-time">
-                        {apt.appointmentTime} · {sessionDurationLabel(apt.durationMinutes)}
-                      </span>
-                    )}
-                    {apt.title && <span className="appointment-title">— {apt.title}</span>}
-                    {apt.roomName ? <span className="appointment-title">· {apt.roomName}</span> : null}
-                    <span className={`appointment-status-badge status-${appointmentStatus(apt.status)}`}>
-                      {appointmentStatusLabel(apt.status)}
-                    </span>
-                    <span className={`appointment-paid-badge ${(apt.isPaid ?? 0) ? 'paid' : 'unpaid'}`}>
-                      {(apt.isPaid ?? 0) ? 'Ödeme Yapıldı' : 'Ödeme Bekliyor'}
-                    </span>
-                  </div>
-                  <div className="appointment-actions" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="edit-apt-button"
-                      onClick={(e) => startEditAppointment(apt, e)}
-                      title="Düzenle"
-                    >
-                      Düzenle
-                    </button>
-                    <button
-                      type="button"
-                      className="delete-apt-button"
-                      onClick={(e) => handleDeleteAppointment(apt.id, e)}
-                      title="İptal et"
-                    >
-                      İptal et
-                    </button>
-                    <span className="expand-icon">{expandedAppointments.has(apt.id) ? '▼' : '▶'}</span>
-                  </div>
-                </div>
-
-                {expandedAppointments.has(apt.id) && (
-                  <div className="appointment-notes">
-                    {editingAppointmentId === apt.id ? (
-                      <form
-                        className="note-form inline-note-form"
-                        onSubmit={(e) => handleUpdateAppointment(apt.id, e)}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="form-group">
-                          <label>Randevu Tarihi *</label>
-                          <input
-                            type="date"
-                            value={appointmentForm.appointmentDate}
-                            onChange={(e) =>
-                              setAppointmentForm({ ...appointmentForm, appointmentDate: e.target.value })
-                            }
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Randevu Saati *</label>
-                          <input
-                            type="time"
-                            value={appointmentForm.appointmentTime}
-                            onChange={(e) =>
-                              setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })
-                            }
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label htmlFor={`editDuration-${apt.id}`}>Süre *</label>
-                          <select
-                            id={`editDuration-${apt.id}`}
-                            value={appointmentForm.durationMinutes}
-                            onChange={(e) =>
-                              setAppointmentForm({
-                                ...appointmentForm,
-                                durationMinutes: sessionDuration(Number(e.target.value)),
-                              })
-                            }
-                          >
-                            {sessionDurationOptions(appointmentForm.durationMinutes).map((item) => (
-                              <option key={item.value} value={item.value}>
-                                {item.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-group">
-                          <label htmlFor={`editFee-${apt.id}`}>Bu seans ücreti (₺)</label>
-                          <input
-                            id={`editFee-${apt.id}`}
-                            type="number"
-                            min={0}
-                            placeholder="Anlaşılan ücret"
-                            value={appointmentForm.sessionFee}
-                            onChange={(e) =>
-                              setAppointmentForm({
-                                ...appointmentForm,
-                                sessionFee: e.target.value === '' ? '' : Number(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        {rooms.length > 0 ? (
-                          <div className="form-group">
-                            <label>Oda</label>
-                            <select
-                              value={appointmentForm.roomId}
-                              onChange={(e) =>
-                                setAppointmentForm({
-                                  ...appointmentForm,
-                                  roomId: Number(e.target.value),
-                                })
-                              }
-                            >
-                              <option value={0}>Seçilmedi</option>
-                              {rooms.map((room) => (
-                                <option key={room.id} value={room.id}>
-                                  {room.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : null}
-                        <div className="form-group">
-                          <label>Başlık (opsiyonel)</label>
-                          <input
-                            type="text"
-                            value={appointmentForm.title}
-                            onChange={(e) =>
-                              setAppointmentForm({ ...appointmentForm, title: e.target.value })
-                            }
-                            placeholder="Örn: İlk görüşme"
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Durum</label>
-                          <select
-                            value={appointmentForm.status}
-                            onChange={(e) =>
-                              setAppointmentForm({
-                                ...appointmentForm,
-                                status: appointmentStatus(e.target.value),
-                              })
-                            }
-                          >
-                            {APPOINTMENT_STATUSES.map((item) => (
-                              <option key={item.value} value={item.value}>
-                                {item.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-group form-group-toggle">
-                          <label>Ödeme Yapıldı mı?</label>
-                          <label className="toggle-switch">
-                            <input
-                              type="checkbox"
-                              checked={appointmentForm.isPaid}
-                              onChange={(e) =>
-                                setAppointmentForm({ ...appointmentForm, isPaid: e.target.checked })
-                              }
-                            />
-                            <span className="toggle-slider" />
-                          </label>
-                        </div>
-                        <div className="form-actions-inline">
-                          <button type="submit" className="submit-button" disabled={submitting}>
-                            {submitting ? 'Kaydediliyor...' : 'Kaydet'}
-                          </button>
-                          <button
-                            type="button"
-                            className="cancel-button"
-                            onClick={() => {
-                              setEditingAppointmentId(null);
-                              setAppointmentForm(emptyAppointmentForm());
-                            }}
-                          >
-                            İptal
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <>
-                    <div className="notes-in-appointment-header">
-                      <span>Randevu Notları</span>
+          {appointments.length === 0 ? (
+            <EmptyState
+              icon={CalendarPlus}
+              title="Henüz randevu yok"
+              hint="Randevu ekledikten sonra her seansa not ekleyebilirsiniz."
+              className="border-0 border-t border-solid"
+            />
+          ) : (
+            <ul className="m-0 list-none divide-y divide-border border-0 border-t border-solid p-0">
+              {appointments.map((apt) => {
+                const status = appointmentStatus(apt.status);
+                const paid = appointmentPaid(apt.isPaid);
+                const expanded = expandedAppointments.has(apt.id);
+                const aptNotes = notesByAppointment[apt.id] || [];
+                const date = parseYmd(apt.appointmentDate);
+                return (
+                  <li key={apt.id} className={cn(status === 'cancelled' && 'bg-muted/30')}>
+                    <div className="flex items-center gap-4 px-5 py-3.5">
                       <button
                         type="button"
-                        className="add-note-inline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowNoteFormFor(showNoteFormFor === apt.id ? null : apt.id);
-                        }}
+                        onClick={() => toggleAppointmentExpand(apt.id)}
+                        aria-expanded={expanded}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-4 border-0 bg-transparent p-0 text-left text-foreground [font-family:inherit]"
                       >
-                        {showNoteFormFor === apt.id ? 'İptal' : '+ Not Ekle'}
+                        <span className={cn('flex w-12 shrink-0 flex-col items-center rounded-lg border border-solid py-1', status === 'cancelled' && 'opacity-60')}>
+                          <span className="text-[11px] font-medium uppercase text-muted-foreground">{format(date, 'MMM', { locale: tr })}</span>
+                          <span className="text-lg font-semibold leading-none">{format(date, 'd')}</span>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block truncate text-sm font-medium', status === 'cancelled' && 'text-muted-foreground line-through')}>
+                            {format(date, 'EEEE', { locale: tr })} · {apt.appointmentTime || '--:--'}
+                          </span>
+                          <span className="block truncate text-[13px] text-muted-foreground">
+                            {sessionDurationLabel(apt.durationMinutes)}
+                            {apt.title ? ` · ${apt.title}` : ''}
+                            {apt.roomName ? ` · ${apt.roomName}` : ''}
+                            {aptNotes.length > 0 ? ` · ${aptNotes.length} not` : ''}
+                          </span>
+                        </span>
+                        <span className="hidden items-center gap-1.5 sm:flex">
+                          <Badge variant={STATUS_BADGE[status]}>{appointmentStatusLabel(status)}</Badge>
+                          {status !== 'cancelled' ? (
+                            <Badge variant={paid ? 'success' : 'warning'}>{paid ? 'Ödendi' : 'Ödeme bekliyor'}</Badge>
+                          ) : null}
+                        </span>
+                        <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
                       </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon-sm" aria-label="Randevu işlemleri">
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => startEditAppointment(apt)}>
+                            <Pencil />
+                            Düzenle
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setExpandedAppointments((prev) => new Set(prev).add(apt.id));
+                              setEditingNoteId(null);
+                              setNoteForm(emptyNoteForm());
+                              setShowNoteFormFor(apt.id);
+                            }}
+                          >
+                            <NotebookPen />
+                            Not ekle
+                          </DropdownMenuItem>
+                          {status !== 'cancelled' ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem destructive onSelect={() => void handleCancelAppointment(apt.id)}>
+                                <X />
+                                İptal et
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-
-                    {showNoteFormFor === apt.id && (
-                      <form
-                        className="note-form inline-note-form"
-                        onSubmit={(e) => handleAddNoteToAppointment(apt.id, e)}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="form-group">
-                          <label>Başlık (opsiyonel)</label>
-                          <input
-                            type="text"
-                            value={noteForm.title}
-                            onChange={(e) =>
-                              setNoteForm({ ...noteForm, title: e.target.value })
-                            }
-                            placeholder="Not başlığı"
-                          />
+                    {expanded ? (
+                      <div className="flex flex-col gap-3 bg-muted/30 px-5 pb-5 pt-1 sm:pl-[5.25rem]">
+                        <div className="flex items-center gap-1.5 sm:hidden">
+                          <Badge variant={STATUS_BADGE[status]}>{appointmentStatusLabel(status)}</Badge>
+                          {status !== 'cancelled' ? (
+                            <Badge variant={paid ? 'success' : 'warning'}>{paid ? 'Ödendi' : 'Ödeme bekliyor'}</Badge>
+                          ) : null}
                         </div>
-                        <div className="form-group">
-                          <label>İçerik *</label>
-                          <textarea
-                            value={noteForm.content}
-                            onChange={(e) =>
-                              setNoteForm({ ...noteForm, content: e.target.value })
-                            }
-                            placeholder="Not içeriği..."
-                            rows={4}
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tarih</label>
-                          <input
-                            type="date"
-                            value={noteForm.noteDate}
-                            onChange={(e) =>
-                              setNoteForm({ ...noteForm, noteDate: e.target.value })
-                            }
-                            required
-                          />
-                        </div>
-                        <button type="submit" className="submit-button" disabled={submitting}>
-                          {submitting ? 'Ekleniyor...' : 'Not Ekle'}
-                        </button>
-                      </form>
-                    )}
-
-                    {notesByAppointment[apt.id]?.length === 0 ? (
-                      <p className="no-notes-in-apt">
-                        Bu randevuya henüz not eklenmemiş.
-                      </p>
-                    ) : (notesByAppointment[apt.id] || []).filter(noteMatchesSearch).length === 0 ? (
-                      <p className="no-notes-in-apt">
-                        Bu randevuda aramanızla eşleşen not yok.
-                      </p>
-                    ) : (
-                      <div className="notes-list">
-                        {(notesByAppointment[apt.id] || [])
-                          .filter(noteMatchesSearch)
-                          .map((note) => renderNoteCard(note))}
+                        {aptNotes.length === 0 && showNoteFormFor !== apt.id ? (
+                          <p className="m-0 text-[13px] text-muted-foreground">Bu seansa henüz not eklenmemiş.</p>
+                        ) : null}
+                        {aptNotes.map((note) => renderNoteCard(note))}
+                        {showNoteFormFor === apt.id ? (
+                          renderNoteEditForm((e) => void handleAddNoteToAppointment(apt.id, e), 'Notu ekle', resetNoteForm)
+                        ) : (
+                          <div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingNoteId(null);
+                                setNoteForm(emptyNoteForm());
+                                setShowNoteFormFor(apt.id);
+                              }}
+                            >
+                              <Plus />
+                              Seans notu ekle
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      ) : null}
 
-      {showAllNotesModal && (
-        <div className="modal-overlay" onClick={() => setShowAllNotesModal(false)}>
-          <div
-            ref={notesModalRef}
-            className="modal-content"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="all-notes-title"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="all-notes-title">Danışanın Tüm Notları</h2>
-              <button
-                className="modal-close"
-                onClick={() => setShowAllNotesModal(false)}
-                aria-label="Kapat"
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <input
+      {tab === 'notes' ? (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="search"
-                className="note-search-input note-search-input-modal"
-                placeholder="Başlık veya içerikte ara..."
+                className="pl-9"
+                placeholder="Başlık veya içerikte ara"
                 value={noteSearch}
                 onChange={(e) => setNoteSearch(e.target.value)}
+                aria-label="Notlarda ara"
               />
-              {allNotes.length === 0 ? (
-                <p className="empty-notes">Henüz not eklenmemiş.</p>
-              ) : allNotes.filter(noteMatchesSearch).length === 0 ? (
-                <p className="empty-notes">Aramanızla eşleşen not yok.</p>
-              ) : (
-                <div className="notes-list">
-                  {allNotes.filter(noteMatchesSearch).map((note) => renderNoteCard(note))}
-                </div>
-              )}
             </div>
+            {allNotes.length === 0 ? (
+              <Card>
+                <EmptyState icon={NotebookPen} title="Henüz not yok" hint="Sağdaki formdan veya bir seansın altından not ekleyebilirsiniz." />
+              </Card>
+            ) : filteredNotes.length === 0 ? (
+              <Card>
+                <EmptyState icon={Search} title="Aramanızla eşleşen not yok" />
+              </Card>
+            ) : (
+              filteredNotes.map((note) => renderNoteCard(note, true))
+            )}
           </div>
+          <Card className="h-fit p-5 lg:sticky lg:top-6">
+            <h2 className="m-0 text-[15px] font-semibold">Yeni not</h2>
+            <p className="m-0 mt-1 text-[13px] text-muted-foreground">Bir seansa bağlı olmayan notlar için.</p>
+            <form className="mt-4 flex flex-col gap-3" onSubmit={handleAddStandaloneNote}>
+              <Field label="Başlık" htmlFor="loose-title">
+                <Input
+                  id="loose-title"
+                  value={looseNote.title}
+                  onChange={(e) => setLooseNote({ ...looseNote, title: e.target.value })}
+                  placeholder="Opsiyonel"
+                />
+              </Field>
+              <Field label="İçerik *" htmlFor="loose-content">
+                <Textarea
+                  id="loose-content"
+                  value={looseNote.content}
+                  onChange={(e) => setLooseNote({ ...looseNote, content: e.target.value })}
+                  rows={5}
+                  required
+                />
+              </Field>
+              <Button type="submit" disabled={submitting} className="self-start">
+                {submitting ? <Loader2 className="animate-spin" /> : <Check />}
+                Notu kaydet
+              </Button>
+            </form>
+          </Card>
         </div>
-      )}
-    </div>
+      ) : null}
+
+      {tab === 'packages' ? <SessionPackages clientId={client.id} /> : null}
+      {tab === 'inventories' ? <ClientInventories clientId={client.id} /> : null}
+
+      <Dialog open={editingClient} onOpenChange={(open) => (open ? null : setEditingClient(false))}>
+        <DialogContent title="Danışan bilgileri">
+          <form onSubmit={handleSaveClient}>
+            <DialogBody>
+              <Field label="Ad soyad *" htmlFor="client-name">
+                <Input id="client-name" required value={clientForm.name} onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })} />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="E-posta" htmlFor="client-email">
+                  <Input id="client-email" type="email" value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} />
+                </Field>
+                <Field label="Telefon" htmlFor="client-phone">
+                  <Input id="client-phone" type="tel" value={clientForm.phone} onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })} />
+                </Field>
+                <Field label="Doğum tarihi" htmlFor="client-birthDate">
+                  <Input
+                    id="client-birthDate"
+                    type="date"
+                    value={clientForm.birthDate}
+                    onChange={(e) => setClientForm({ ...clientForm, birthDate: e.target.value })}
+                  />
+                </Field>
+                <Field label="Anlaşılan ücret (₺)" htmlFor="client-agreedFee">
+                  <Input
+                    id="client-agreedFee"
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={clientForm.agreedFee}
+                    onChange={(e) => setClientForm({ ...clientForm, agreedFee: Number(e.target.value) || 0 })}
+                  />
+                </Field>
+                <Field label="Acil durum kişisi" htmlFor="client-emergencyName">
+                  <Input
+                    id="client-emergencyName"
+                    value={clientForm.emergencyName}
+                    onChange={(e) => setClientForm({ ...clientForm, emergencyName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Acil durum telefonu" htmlFor="client-emergencyPhone">
+                  <Input
+                    id="client-emergencyPhone"
+                    type="tel"
+                    value={clientForm.emergencyPhone}
+                    onChange={(e) => setClientForm({ ...clientForm, emergencyPhone: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <FormError>{clientFormError}</FormError>
+            </DialogBody>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingClient(false)}>
+                Vazgeç
+              </Button>
+              <Button type="submit" disabled={savingClient}>
+                {savingClient ? <Loader2 className="animate-spin" /> : null}
+                {savingClient ? 'Kaydediliyor...' : 'Kaydet'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={appointmentDialog !== null} onOpenChange={(open) => (open ? null : setAppointmentDialog(null))}>
+        <DialogContent
+          title={appointmentDialog?.mode === 'edit' ? 'Randevuyu düzenle' : 'Yeni randevu'}
+          description={client.name || undefined}
+        >
+          <form onSubmit={handleSaveAppointment}>
+            <DialogBody>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <Field label="Tarih *" htmlFor="apt-date" className="col-span-2 sm:col-span-1">
+                  <Input
+                    id="apt-date"
+                    type="date"
+                    value={appointmentForm.appointmentDate}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, appointmentDate: e.target.value })}
+                    required
+                  />
+                </Field>
+                <Field label="Saat *" htmlFor="apt-time">
+                  <Input
+                    id="apt-time"
+                    type="time"
+                    value={appointmentForm.appointmentTime}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, appointmentTime: e.target.value })}
+                    required
+                  />
+                </Field>
+                <Field label="Süre *" htmlFor="apt-duration">
+                  <NativeSelect
+                    id="apt-duration"
+                    value={appointmentForm.durationMinutes}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, durationMinutes: sessionDuration(Number(e.target.value)) })}
+                  >
+                    {sessionDurationOptions(appointmentForm.durationMinutes).map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {appointmentDialog?.mode === 'edit' ? (
+                  <Field label="Durum" htmlFor="apt-status">
+                    <NativeSelect
+                      id="apt-status"
+                      value={appointmentForm.status}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, status: appointmentStatus(e.target.value) })}
+                    >
+                      {APPOINTMENT_STATUSES.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
+                {rooms.length > 0 ? (
+                  <Field label="Oda" htmlFor="apt-room">
+                    <NativeSelect
+                      id="apt-room"
+                      value={appointmentForm.roomId}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, roomId: Number(e.target.value) })}
+                    >
+                      <option value={0}>Seçilmedi</option>
+                      {rooms.map((room) => (
+                        <option key={room.id} value={room.id}>
+                          {room.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
+                <Field label="Başlık" htmlFor="apt-title">
+                  <Input
+                    id="apt-title"
+                    value={appointmentForm.title}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, title: e.target.value })}
+                    placeholder="Örn. İlk görüşme"
+                  />
+                </Field>
+                <Field label="Bu seansın ücreti (₺)" htmlFor="apt-fee" hint="Boş bırakırsanız anlaşılan ücret kullanılır.">
+                  <Input
+                    id="apt-fee"
+                    type="number"
+                    min={0}
+                    placeholder={client.agreedFee != null ? String(client.agreedFee) : 'Anlaşılan ücret'}
+                    value={appointmentForm.sessionFee}
+                    onChange={(e) =>
+                      setAppointmentForm({ ...appointmentForm, sessionFee: e.target.value === '' ? '' : Number(e.target.value) })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-solid px-4 py-3">
+                <div>
+                  <p className="m-0 text-sm font-medium">Ödeme alındı</p>
+                  <p className="m-0 text-xs text-muted-foreground">Ödemeler ve raporlar bu işarete göre hesaplanır.</p>
+                </div>
+                <Switch
+                  checked={appointmentForm.isPaid}
+                  onCheckedChange={(checked) => setAppointmentForm({ ...appointmentForm, isPaid: checked })}
+                  aria-label="Ödeme alındı"
+                />
+              </div>
+              <FormError>{appointmentError}</FormError>
+            </DialogBody>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAppointmentDialog(null)}>
+                Vazgeç
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? <Loader2 className="animate-spin" /> : null}
+                {appointmentDialog?.mode === 'edit' ? 'Kaydet' : 'Randevuyu ekle'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </PageContainer>
   );
 };

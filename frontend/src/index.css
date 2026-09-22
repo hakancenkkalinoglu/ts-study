@@ -1,53 +1,31 @@
-:root {
-  /* Light theme - Kahverengi tonları */
-  --bg-primary: #f5ebe0;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #e8d5c4;
-  --bg-hover: #ede0d4;
-  --text-primary: #3d2817;
-  --text-secondary: #6b4e3d;
-  --border-color: #d4c4b0;
-  --accent-color: #8b4513;
-  --accent-hover: #6b3410;
-}
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 
-[data-theme='dark'] {
-  /* Dark theme - Koyu kahverengi tonları */
-  --bg-primary: #1a1612;
-  --bg-secondary: #2d2419;
-  --bg-tertiary: #3d2f21;
-  --bg-hover: #352a1f;
-  --text-primary: #e8d5c4;
-  --text-secondary: #c4a882;
-  --border-color: #4a3d2f;
-  --accent-color: #a0522d;
-  --accent-hover: #8b4513;
-}
+  html {
+    overflow-x: hidden;
+    color-scheme: light;
+  }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+  html[data-theme='dark'] {
+    color-scheme: dark;
+  }
 
-html {
-  overflow-x: hidden;
-}
+  body {
+    font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--background);
+    color: var(--foreground);
+  }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  transition: background-color 0.3s, color 0.3s;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }
 
 .sr-only {
@@ -60,15 +38,6 @@ code {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--accent-color);
-  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

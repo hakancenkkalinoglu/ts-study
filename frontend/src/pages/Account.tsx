@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { CalendarDays, Download, KeyRound, Link2Off, Loader2, Trash2, UserRound } from 'lucide-react';
 import {
   apiErrorMessage,
   changePassword,
@@ -13,7 +14,32 @@ import {
 import type { Profile } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmDialog';
-import './Account.css';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Field, FormError, Input, NativeSelect } from '@/components/ui/input';
+import { Avatar, LoadingRows, PageContainer, PageHeader } from '@/components/ui/page';
+import { cn } from '@/lib/utils';
+
+const Section = ({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+  className?: string;
+}) => (
+  <Card className={cn('grid gap-5 p-5 md:grid-cols-[240px_minmax(0,1fr)] md:gap-8 md:p-6', className)}>
+    <div>
+      <h2 className="m-0 text-[15px] font-semibold">{title}</h2>
+      <p className="m-0 mt-1 text-sm text-muted-foreground">{description}</p>
+    </div>
+    <div className="min-w-0">{children}</div>
+  </Card>
+);
 
 export const Account = () => {
   const { showToast } = useToast();
@@ -26,6 +52,7 @@ export const Account = () => {
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const load = async () => {
     try {
@@ -61,13 +88,16 @@ export const Account = () => {
   const handlePassword = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSavingPassword(true);
     try {
       await changePassword(currentPassword, newPassword);
       setCurrentPassword('');
       setNewPassword('');
-      showToast('Şifre güncellendi.');
+      showToast('Şifre güncellendi. Diğer cihazlardaki oturumlar kapatıldı.');
     } catch (err) {
       setError(apiErrorMessage(err, 'Şifre değiştirilemedi.'));
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -104,8 +134,8 @@ export const Account = () => {
 
   const handleDelete = async () => {
     const ok = await confirm({
-      title: 'Hesabı sil',
-      message: 'Hesabınız, danışanlarınız ve notlarınız kalıcı silinsin mi?',
+      title: 'Hesabı kalıcı sil',
+      message: 'Hesabınız, danışanlarınız, notlarınız ve ekleriniz kalıcı silinir. Bu işlem geri alınamaz.',
       confirmLabel: 'Hesabı sil',
       danger: true,
     });
@@ -121,82 +151,134 @@ export const Account = () => {
 
   if (!profile) {
     return (
-      <div className="account-page">
-        <p>{error || 'Yükleniyor...'}</p>
-      </div>
+      <PageContainer className="max-w-4xl">
+        <PageHeader title="Hesap" />
+        {error ? <FormError>{error}</FormError> : (
+          <Card>
+            <LoadingRows />
+          </Card>
+        )}
+      </PageContainer>
     );
   }
 
   return (
-    <div className="account-page">
-      <h1>Hesap</h1>
-      <p className="account-lead">
-        Görünen ad klinik listesinde çıkar. KVKK kapsamında verilerinizi indirebilir veya hesabı silebilirsiniz.
-      </p>
-      {error ? <div className="account-error">{error}</div> : null}
+    <PageContainer className="max-w-4xl">
+      <PageHeader title="Hesap" description="Profilinizi, güvenliği ve bağlantılarınızı yönetin." />
+      {error ? <div className="mb-4"><FormError>{error}</FormError></div> : null}
 
-      <form className="account-card" onSubmit={handleProfile}>
-        <h2>Profil</h2>
-        <label htmlFor="displayName">Görünen ad</label>
-        <input id="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-        <label htmlFor="accountEmail">E-posta</label>
-        <input id="accountEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <label htmlFor="reminderHours">Yaklaşan seans uyarısı</label>
-        <select
-          id="reminderHours"
-          value={reminderHours}
-          onChange={(e) => setReminderHours(Number(e.target.value))}
-        >
-          <option value={2}>2 saat</option>
-          <option value={12}>12 saat</option>
-          <option value={24}>24 saat</option>
-          <option value={48}>48 saat</option>
-        </select>
-        <button type="submit" disabled={saving}>
-          Kaydet
-        </button>
-      </form>
+      <div className="flex flex-col gap-6">
+        <Section title="Profil" description="Görünen adınız klinik listesinde ve takvimde görünür.">
+          <form onSubmit={handleProfile} className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <Avatar name={displayName || email} className="size-12 text-base" />
+              <div className="min-w-0">
+                <p className="m-0 truncate text-sm font-medium">{profile.displayName}</p>
+                <p className="m-0 truncate text-[13px] text-muted-foreground">{profile.email}</p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Görünen ad" htmlFor="displayName">
+                <Input id="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+              </Field>
+              <Field label="E-posta" htmlFor="accountEmail">
+                <Input id="accountEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </Field>
+            </div>
+            <Field label="Yaklaşan seans uyarısı" htmlFor="reminderHours" hint="Bugün ekranındaki 'Yaklaşan' listesi bu süreye göre dolar.">
+              <NativeSelect id="reminderHours" value={reminderHours} onChange={(e) => setReminderHours(Number(e.target.value))} className="sm:w-60">
+                <option value={2}>2 saat önce</option>
+                <option value={12}>12 saat önce</option>
+                <option value={24}>24 saat önce</option>
+                <option value={48}>48 saat önce</option>
+              </NativeSelect>
+            </Field>
+            <div>
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" /> : <UserRound />}
+                Kaydet
+              </Button>
+            </div>
+          </form>
+        </Section>
 
-      <form className="account-card" onSubmit={handlePassword}>
-        <h2>Şifre değiştir</h2>
-        <label htmlFor="currentPassword">Mevcut şifre</label>
-        <input
-          id="currentPassword"
-          type="password"
-          value={currentPassword}
-          onChange={(e) => setCurrentPassword(e.target.value)}
-          required
-        />
-        <label htmlFor="newPassword">Yeni şifre</label>
-        <input
-          id="newPassword"
-          type="password"
-          minLength={6}
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          required
-        />
-        <button type="submit">Şifreyi güncelle</button>
-      </form>
+        <Section title="Şifre" description="Şifreyi değiştirdiğinizde diğer cihazlardaki oturumlar kapanır.">
+          <form onSubmit={handlePassword} className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Mevcut şifre" htmlFor="currentPassword">
+                <Input
+                  id="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Yeni şifre" htmlFor="newPassword" hint="En az 6 karakter.">
+                <Input
+                  id="newPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+            <div>
+              <Button type="submit" variant="outline" disabled={savingPassword}>
+                {savingPassword ? <Loader2 className="animate-spin" /> : <KeyRound />}
+                Şifreyi güncelle
+              </Button>
+            </div>
+          </form>
+        </Section>
 
-      <section className="account-card">
-        <h2>Google Takvim</h2>
-        <p>{profile.googleConnected ? 'Takvim bağlı.' : 'Takvim bağlı değil.'}</p>
-        <button type="button" onClick={() => void handleGoogle()}>
-          {profile.googleConnected ? 'Bağlantıyı kes' : 'Google bağla'}
-        </button>
-      </section>
+        <Section title="Google Takvim" description="Bağlıysa yeni randevular takviminize eklenir ve Meet linki oluşturulabilir.">
+          <div className="flex flex-col gap-4 rounded-lg border border-solid p-4 sm:flex-row sm:items-center">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+              <CalendarDays className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="m-0 text-sm font-medium">Google Takvim</p>
+              <div className="mt-1">
+                {profile.googleConnected ? <Badge variant="success">Bağlı</Badge> : <Badge>Bağlı değil</Badge>}
+              </div>
+            </div>
+            <Button variant={profile.googleConnected ? 'ghost' : 'default'} onClick={() => void handleGoogle()}>
+              {profile.googleConnected ? <Link2Off /> : null}
+              {profile.googleConnected ? 'Bağlantıyı kes' : 'Google’ı bağla'}
+            </Button>
+          </div>
+        </Section>
 
-      <section className="account-card">
-        <h2>KVKK</h2>
-        <p>Danışan, randevu ve not kayıtlarınızı JSON olarak indirebilirsiniz.</p>
-        <button type="button" onClick={() => void handleExport()}>
-          Verilerimi indir
-        </button>
-        <button type="button" className="account-danger" onClick={() => void handleDelete()}>
-          Hesabı sil
-        </button>
-      </section>
-    </div>
+        <Section title="Verileriniz (KVKK)" description="Danışan, randevu ve not kayıtlarınızı indirin veya hesabınızı kalıcı silin.">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 rounded-lg border border-solid p-4 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <p className="m-0 text-sm font-medium">Verilerimi indir</p>
+                <p className="m-0 text-[13px] text-muted-foreground">Tüm kayıtlarınız tek bir JSON dosyası olarak iner.</p>
+              </div>
+              <Button variant="outline" onClick={() => void handleExport()}>
+                <Download />
+                İndir
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 rounded-lg border border-solid border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <p className="m-0 text-sm font-medium text-destructive">Hesabı sil</p>
+                <p className="m-0 text-[13px] text-muted-foreground">Geri alınamaz. Kurucusu olduğunuz bir klinik varsa önce devredin.</p>
+              </div>
+              <Button variant="destructive" onClick={() => void handleDelete()}>
+                <Trash2 />
+                Hesabı sil
+              </Button>
+            </div>
+          </div>
+        </Section>
+      </div>
+    </PageContainer>
   );
 };

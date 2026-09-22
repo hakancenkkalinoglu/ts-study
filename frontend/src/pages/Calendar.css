@@ -1,128 +1,13 @@
-.calendar-container {
-  padding: 16px 20px;
-  max-width: none;
-  margin: 0;
-  height: calc(100vh - 64px);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-}
-
-.calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-
-.calendar-add-btn {
-  background: var(--accent-color);
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.calendar-add-btn:hover {
-  filter: brightness(1.1);
-  transform: translateY(-1px);
-}
-
-.calendar-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.calendar-nav-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.calendar-nav-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-color);
-}
-
-.calendar-today-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.calendar-today-btn:hover {
-  background: var(--bg-hover);
-}
-
-.calendar-title {
-  margin: 0 0 0 20px;
-  font-size: 22px;
-  color: var(--text-primary);
-}
-
-.calendar-view-switcher {
-  display: flex;
-  gap: 4px;
-}
-
-.view-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  padding: 8px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.view-btn:hover {
-  color: var(--text-primary);
-}
-
-.view-btn.active {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
-  color: white;
-}
-
-.calendar-loading {
-  text-align: center;
-  padding: 60px;
-  color: var(--text-secondary);
-}
-
 .calendar-content {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(42, 29, 21, 0.04);
 }
 
 .time-grid {
@@ -137,12 +22,12 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
 }
 
 .time-grid-gutter-head {
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border);
 }
 
 .time-grid-day-head {
@@ -153,30 +38,42 @@
   padding: 10px 4px;
   border: none;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--foreground);
+  font-family: inherit;
   cursor: pointer;
+  transition: background 0.15s;
+}
+
+.time-grid-day-head:hover {
+  background: var(--accent);
 }
 
 .time-grid-day-name {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
 }
 
 .time-grid-day-num {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.time-grid-day-head.is-today .time-grid-day-num {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--accent-color);
-  color: white;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.time-grid-day-head.is-today .time-grid-day-name {
+  color: var(--primary);
+}
+
+.time-grid-day-head.is-today .time-grid-day-num {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .time-grid-scroll {
@@ -191,12 +88,13 @@
 }
 
 .time-grid-gutter {
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border);
 }
 
 .time-hour-label {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
   text-align: right;
   padding: 0 8px;
   transform: translateY(-7px);
@@ -208,17 +106,21 @@
 
 .time-day-col {
   position: relative;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border);
   cursor: pointer;
   touch-action: none;
 }
 
+.time-day-col:last-child {
+  border-right: none;
+}
+
 .time-day-col.is-today {
-  background: rgba(139, 69, 19, 0.04);
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
 }
 
 .time-hour-line {
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   box-sizing: border-box;
 }
 
@@ -227,20 +129,25 @@
   box-sizing: border-box;
   padding: 4px 8px 10px;
   border-radius: 6px;
-  color: white;
+  color: #fff;
   overflow: hidden;
   cursor: grab;
   z-index: 2;
-  background: var(--accent-color);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   user-select: none;
   touch-action: none;
+  transition: box-shadow 0.15s, filter 0.15s;
+}
+
+.time-event:hover {
+  filter: brightness(1.06);
 }
 
 .time-event.is-dragging {
   cursor: grabbing;
   z-index: 5;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
 }
 
 .time-event-resize {
@@ -254,7 +161,7 @@
 }
 
 .time-event-resize:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .time-blocked {
@@ -262,23 +169,17 @@
   left: 3px;
   right: 3px;
   box-sizing: border-box;
-  border: none;
   border-radius: 6px;
   z-index: 1;
   padding: 4px 8px;
   text-align: left;
-  font-size: 12px;
+  font-family: inherit;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
   cursor: pointer;
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--bg-hover),
-    var(--bg-hover) 6px,
-    var(--bg-secondary) 6px,
-    var(--bg-secondary) 12px
-  );
-  border: 1px dashed var(--border-color);
+  background: repeating-linear-gradient(-45deg, var(--muted), var(--muted) 6px, var(--card) 6px, var(--card) 12px);
+  border: 1px dashed var(--input);
 }
 
 .time-create-preview {
@@ -289,65 +190,26 @@
   border-radius: 6px;
   z-index: 3;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: white;
+  color: var(--primary-foreground);
   pointer-events: none;
-  background: var(--accent-color);
-  opacity: 0.75;
-}
-
-.slot-chooser-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.slot-chooser {
-  position: fixed;
-  min-width: 200px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.slot-chooser-meta {
-  margin: 0 8px 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.slot-chooser button {
-  background: transparent;
-  border: none;
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.slot-chooser button:hover {
-  background: var(--bg-hover);
+  background: var(--primary);
+  opacity: 0.8;
 }
 
 .time-event.status-cancelled,
 .time-event.status-no_show {
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
-.time-event.status-cancelled {
+.time-event.status-cancelled .time-event-title {
   text-decoration: line-through;
 }
 
 .time-event.not-mine {
-  outline: 1px dashed rgba(255, 255, 255, 0.5);
+  outline: 1px dashed rgba(255, 255, 255, 0.55);
+  outline-offset: -3px;
   cursor: pointer;
 }
 
@@ -362,17 +224,19 @@
 
 .time-event-time {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
 }
 
 .time-event-title {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
 .time-event-meta {
   font-size: 11px;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 .time-now {
@@ -380,7 +244,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: #ea4335;
+  background: var(--destructive);
   z-index: 4;
   pointer-events: none;
 }
@@ -392,10 +256,9 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #ea4335;
+  background: var(--destructive);
 }
 
-/* Month view */
 .calendar-month-view {
   display: flex;
   flex-direction: column;
@@ -406,23 +269,23 @@
 .month-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .month-weekday {
   text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  padding: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  padding: 10px 4px;
 }
 
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
   flex: 1;
   min-height: 0;
 }
@@ -430,235 +293,129 @@
 .month-day-cell {
   min-height: 0;
   height: 100%;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px;
-  background: var(--bg-primary);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px;
+  background: var(--card);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.15s;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  outline: none;
 }
 
-.month-day-cell:hover {
-  background: var(--bg-hover);
+.month-day-cell:nth-child(7n) {
+  border-right: none;
+}
+
+.month-day-cell:hover,
+.month-day-cell:focus-visible {
+  background: var(--accent);
 }
 
 .month-day-cell.other-month {
-  opacity: 0.5;
+  background: color-mix(in srgb, var(--muted) 50%, var(--card));
 }
 
-.month-day-cell.today {
-  border-color: var(--accent-color);
-  background: rgba(139, 69, 19, 0.05);
+.month-day-cell.other-month .month-day-num {
+  color: var(--muted-foreground);
 }
 
 .month-day-num {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-  display: block;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.month-day-cell.today .month-day-num {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .month-day-apts {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: 1;
   min-height: 0;
   overflow: auto;
 }
 
-.more-apts {
-  font-size: 11px;
-  color: var(--text-secondary);
+.calendar-apt-card {
+  background: var(--primary);
+  color: #fff;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: filter 0.15s;
 }
 
-/* Appointment cards */
-.calendar-apt-card {
-  background: var(--accent-color);
-  color: white;
-  padding: 10px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: transform 0.2s;
+.calendar-apt-card:hover {
+  filter: brightness(1.08);
 }
 
 .calendar-apt-card.status-cancelled,
 .calendar-apt-card.status-no_show {
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
 .calendar-apt-card.status-cancelled {
   text-decoration: line-through;
 }
 
-.calendar-apt-card:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.1);
-}
-
 .calendar-apt-card.not-mine {
-  outline: 1px dashed rgba(255, 255, 255, 0.5);
-}
-
-.apt-room,
-.apt-therapist {
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.calendar-room-filter {
-  margin-left: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.calendar-peek {
-  padding: 0 24px 24px;
-  color: var(--text-primary);
-}
-
-.calendar-peek-hint {
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.calendar-apt-card.small {
-  padding: 6px 10px;
+  outline: 1px dashed rgba(255, 255, 255, 0.55);
+  outline-offset: -2px;
 }
 
 .calendar-apt-card.tiny {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 2px 6px;
+  font-size: 11.5px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.apt-time {
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0.95;
-  margin-bottom: 4px;
-}
-
-.apt-time-sm {
-  font-size: 11px;
-  font-weight: 600;
-  display: block;
-  margin-bottom: 2px;
-}
-
 .apt-time-tiny {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   margin-right: 4px;
-}
-
-.apt-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.apt-title-sm {
-  font-size: 11px;
   opacity: 0.9;
-  display: block;
+  font-variant-numeric: tabular-nums;
 }
 
-.apt-client {
-  font-size: 13px;
-  opacity: 0.95;
-}
-
-.apt-meet-link {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  text-decoration: underline;
-}
-
-.apt-meet-link:hover {
-  color: white;
-}
-
-/* Responsive */
 @media (max-width: 900px) {
-  .calendar-container {
-    padding: 16px;
-  }
-
-  .calendar-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .calendar-toolbar {
-    justify-content: center;
-  }
-
-  .calendar-title {
-    margin: 0;
-    text-align: center;
-    font-size: 18px;
-  }
-
-  .calendar-add-btn {
-    width: 100%;
-  }
-
-  .calendar-view-switcher {
-    justify-content: center;
-  }
-
-  .calendar-content {
-    padding: 16px;
-  }
-
-  .time-grid-body,
-  .time-grid-header {
+  .time-grid.is-week .time-grid-body,
+  .time-grid.is-week .time-grid-header {
     min-width: 760px;
   }
 
   .month-day-cell {
-    min-height: 0;
-    padding: 4px;
+    padding: 3px;
   }
 
   .month-day-num {
-    font-size: 12px;
+    font-size: 11px;
+    min-width: 20px;
+    height: 20px;
   }
 
   .calendar-apt-card.tiny {
     font-size: 10px;
-    padding: 2px 4px;
+    padding: 1px 3px;
   }
 
   .apt-time-tiny {
-    font-size: 9px;
-  }
-}
-
-@media (max-width: 600px) {
-  .calendar-month-view .month-weekdays,
-  .calendar-month-view .month-grid {
-    grid-template-columns: repeat(7, 1fr);
-  }
-
-  .month-day-cell {
-    min-height: 0;
-  }
-
-  .view-btn {
-    padding: 6px 12px;
-    font-size: 13px;
+    display: none;
   }
 }

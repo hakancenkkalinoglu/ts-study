@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
+import { Copy, ExternalLink, Loader2, Trash2, Video } from 'lucide-react';
 import {
   updateAppointment,
   deleteAppointment,
@@ -11,8 +12,10 @@ import {
 import type { AppointmentStatus, AppointmentWithClient, ClinicRoom } from '../types';
 import { APPOINTMENT_STATUSES, appointmentStatus, sessionDuration, sessionDurationOptions } from '../types';
 import { useConfirm } from '../contexts/ConfirmDialog';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import './AddClientModal.css';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Field, FormError, Input, NativeSelect, Switch } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/page';
 
 const PENDING_MEET_KEY = 'pendingMeetAppointmentId';
 
@@ -23,31 +26,29 @@ interface UpdateAppointmentModalProps {
   appointment: AppointmentWithClient | null;
 }
 
-export const UpdateAppointmentModal = ({
-  isOpen,
-  onClose,
-  onSuccess,
-  appointment,
-}: UpdateAppointmentModalProps) => {
-  const { confirm } = useConfirm();
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(isOpen, dialogRef);
-  const getInitialFormData = (apt: AppointmentWithClient) => {
-    const dateStr = apt.appointmentDate.includes('T')
-      ? apt.appointmentDate.split('T')[0]
-      : apt.appointmentDate;
-    return {
-      appointmentDate: dateStr,
-      appointmentTime: apt.appointmentTime || '09:00',
-      title: apt.title || '',
-      isPaid: !!(apt.isPaid ?? 0),
-      status: appointmentStatus(apt.status),
-      roomId: apt.roomId || 0,
-      durationMinutes: sessionDuration(apt.durationMinutes),
-      sessionFee: apt.sessionFee ?? ('' as number | ''),
-    };
+const getInitialFormData = (apt: AppointmentWithClient) => {
+  const dateStr = apt.appointmentDate.includes('T') ? apt.appointmentDate.split('T')[0] : apt.appointmentDate;
+  return {
+    appointmentDate: dateStr,
+    appointmentTime: apt.appointmentTime || '09:00',
+    title: apt.title || '',
+    isPaid: !!(apt.isPaid ?? 0),
+    status: appointmentStatus(apt.status),
+    roomId: apt.roomId || 0,
+    durationMinutes: sessionDuration(apt.durationMinutes),
+    sessionFee: apt.sessionFee ?? ('' as number | ''),
   };
+};
 
+const readError = (err: unknown) => {
+  const response = err && typeof err === 'object' && 'response' in err
+    ? (err as { response?: { status?: number; data?: { message?: string } } }).response
+    : undefined;
+  return { status: response?.status ?? null, message: response?.data?.message ?? null };
+};
+
+export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment }: UpdateAppointmentModalProps) => {
+  const { confirm } = useConfirm();
   const [formData, setFormData] = useState({
     appointmentDate: '',
     appointmentTime: '09:00',
@@ -69,15 +70,6 @@ export const UpdateAppointmentModal = ({
   const [meetError, setMeetError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
   const displayMeetLink = appointment?.googleMeetLink ?? meetLink;
 
   useEffect(() => {
@@ -85,6 +77,7 @@ export const UpdateAppointmentModal = ({
       setFormData(getInitialFormData(appointment));
       if (!appointment.googleMeetLink) setMeetLink(null);
       setMeetError(null);
+      setError(null);
     }
   }, [appointment]);
 
@@ -113,24 +106,20 @@ export const UpdateAppointmentModal = ({
         onSuccess();
       })
       .catch((err: unknown) => {
-        const msg =
-          err && typeof err === 'object' && 'response' in err
-            ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-            : null;
-        setMeetError(msg || 'Google Meet oluşturulurken bir hata oluştu.');
+        setMeetError(readError(err).message || 'Google Meet oluşturulurken bir hata oluştu.');
       })
       .finally(() => setCreatingMeet(false));
   }, [appointment, onSuccess]);
 
-  if (!isOpen || !appointment) return null;
+  if (!appointment) return null;
 
   const initialFormData = getInitialFormData(appointment);
+  const currentFormData = formData.appointmentDate ? formData : initialFormData;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
       await updateAppointment(appointment.clientId, appointment.id, {
         appointmentDate: formData.appointmentDate || initialFormData.appointmentDate,
@@ -155,15 +144,14 @@ export const UpdateAppointmentModal = ({
 
   const handleDelete = async () => {
     const ok = await confirm({
-      title: 'Randevuyu sil',
-      message: 'Randevu ve notları kalıcı silinsin mi? Gelmedi / iptal için durumu değiştirmen yeterli.',
+      title: 'Randevuyu kalıcı sil',
+      message: 'Randevu, notları ve ekleri kalıcı silinsin mi? Gelmedi veya iptal için durumu değiştirmeniz yeterli.',
       confirmLabel: 'Kalıcı sil',
       danger: true,
     });
     if (!ok) return;
     setError(null);
     setDeleting(true);
-
     try {
       await deleteAppointment(appointment.clientId, appointment.id);
       onSuccess();
@@ -200,231 +188,200 @@ export const UpdateAppointmentModal = ({
       setMeetLink(result.meetLink);
       onSuccess();
     } catch (err: unknown) {
-      const status =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { status?: number } }).response?.status
-          : null;
-      const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-          : null;
+      const { status, message } = readError(err);
       if (status === 403) {
         setGoogleConnected(false);
       }
-      setMeetError(msg || 'Google Meet oluşturulurken bir hata oluştu.');
+      setMeetError(message || 'Google Meet oluşturulurken bir hata oluştu.');
     } finally {
       setCreatingMeet(false);
     }
   };
 
-  const currentFormData =
-    formData.appointmentDate ? formData : initialFormData;
+  const setField = (patch: Partial<typeof formData>) => setFormData((prev) => ({ ...(prev.appointmentDate ? prev : initialFormData), ...patch }));
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        className="modal-content"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-apt-title"
-        tabIndex={-1}
+    <Dialog open={isOpen} onOpenChange={(open) => (open ? null : onClose())}>
+      <DialogContent
+        title="Randevuyu düzenle"
+        description={
+          <span className="flex items-center gap-2">
+            <Avatar name={appointment.clientName} className="size-5 text-[9px]" />
+            {appointment.clientName || 'Danışan'}
+          </span>
+        }
       >
-        <div className="modal-header">
-          <h2 id="update-apt-title">Randevuyu Güncelle</h2>
-          <button className="close-button" onClick={onClose} aria-label="Kapat">
-            ×
-          </button>
-        </div>
-        <div style={{ padding: '0 24px 8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-          Danışan: <strong style={{ color: 'var(--text-primary)' }}>{appointment.clientName || 'Danışan'}</strong>
-        </div>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="appointmentDate">Tarih *</label>
-            <input
-              type="date"
-              id="appointmentDate"
-              required
-              value={currentFormData.appointmentDate}
-              onChange={(e) =>
-                setFormData({ ...formData, appointmentDate: e.target.value })
-              }
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="appointmentTime">Saat *</label>
-            <input
-              type="time"
-              id="appointmentTime"
-              required
-              value={currentFormData.appointmentTime}
-              onChange={(e) =>
-                setFormData({ ...formData, appointmentTime: e.target.value })
-              }
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="durationMinutes">Süre *</label>
-            <select
-              id="durationMinutes"
-              value={currentFormData.durationMinutes}
-              onChange={(e) =>
-                setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
-              }
-            >
-              {sessionDurationOptions(currentFormData.durationMinutes).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label htmlFor="sessionFee">Bu seans ücreti (₺)</label>
-            <input
-              id="sessionFee"
-              type="number"
-              min={0}
-              placeholder="Anlaşılan ücret"
-              value={currentFormData.sessionFee}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  sessionFee: e.target.value === '' ? '' : Number(e.target.value),
-                })
-              }
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="title">Başlık</label>
-            <input
-              type="text"
-              id="title"
-              placeholder="Opsiyonel"
-              value={currentFormData.title}
-              onChange={(e) =>
-                setFormData({ ...formData, title: e.target.value })
-              }
-            />
-          </div>
-          {rooms.length > 0 ? (
-            <div className="form-group">
-              <label htmlFor="updateRoomId">Oda</label>
-              <select
-                id="updateRoomId"
-                value={currentFormData.roomId}
-                onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
-              >
-                <option value={0}>Seçilmedi</option>
-                {rooms.map((room) => (
-                  <option key={room.id} value={room.id}>
-                    {room.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          <div className="form-group">
-            <label htmlFor="appointmentStatus">Durum</label>
-            <select
-              id="appointmentStatus"
-              value={currentFormData.status}
-              onChange={(e) =>
-                setFormData({ ...formData, status: appointmentStatus(e.target.value) })
-              }
-            >
-              {APPOINTMENT_STATUSES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group form-group-toggle">
-            <label>Ödeme Yapıldı mı?</label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={currentFormData.isPaid}
-                onChange={(e) =>
-                  setFormData({ ...formData, isPaid: e.target.checked })
-                }
-              />
-              <span className="toggle-slider" />
-            </label>
-          </div>
-
-          <div className="form-group google-meet-section">
-            <label>Google Meet</label>
-            {!displayMeetLink ? (
-              <>
-                <button
-                  type="button"
-                  className="btn-google-connect"
-                  onClick={handleMeetClick}
-                  disabled={creatingMeet || connectingGoogle}
+          <DialogBody>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <Field label="Tarih *" htmlFor="upd-date" className="col-span-2 sm:col-span-1">
+                <Input
+                  type="date"
+                  id="upd-date"
+                  required
+                  value={currentFormData.appointmentDate}
+                  onChange={(e) => setField({ appointmentDate: e.target.value })}
+                />
+              </Field>
+              <Field label="Saat *" htmlFor="upd-time">
+                <Input
+                  type="time"
+                  id="upd-time"
+                  required
+                  value={currentFormData.appointmentTime}
+                  onChange={(e) => setField({ appointmentTime: e.target.value })}
+                />
+              </Field>
+              <Field label="Süre *" htmlFor="upd-duration">
+                <NativeSelect
+                  id="upd-duration"
+                  value={currentFormData.durationMinutes}
+                  onChange={(e) => setField({ durationMinutes: sessionDuration(Number(e.target.value)) })}
                 >
-                  {connectingGoogle
-                    ? 'Google’a yönlendiriliyor...'
-                    : creatingMeet
-                      ? 'Meet oluşturuluyor...'
-                      : 'Google Meet oluştur'}
-                </button>
-                <p className="meet-hint">
-                  Psikolog ve danışan e-postalarına davet gider, ardından toplantı linki burada görünür.
-                </p>
-              </>
-            ) : (
-              <div className="meet-links-display">
-                <div className="meet-link-box">
-                  <a href={displayMeetLink} target="_blank" rel="noopener noreferrer" className="meet-link">
-                    Meet linki – yeni sekmede aç
-                  </a>
-                  <button
+                  {sessionDurationOptions(currentFormData.durationMinutes).map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Durum" htmlFor="upd-status">
+                <NativeSelect
+                  id="upd-status"
+                  value={currentFormData.status}
+                  onChange={(e) => setField({ status: appointmentStatus(e.target.value) })}
+                >
+                  {APPOINTMENT_STATUSES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              {rooms.length > 0 ? (
+                <Field label="Oda" htmlFor="upd-room">
+                  <NativeSelect
+                    id="upd-room"
+                    value={currentFormData.roomId}
+                    onChange={(e) => setField({ roomId: Number(e.target.value) })}
+                  >
+                    <option value={0}>Seçilmedi</option>
+                    {rooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              ) : null}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Başlık" htmlFor="upd-title">
+                <Input
+                  id="upd-title"
+                  placeholder="Opsiyonel"
+                  value={currentFormData.title}
+                  onChange={(e) => setField({ title: e.target.value })}
+                />
+              </Field>
+              <Field label="Bu seansın ücreti (₺)" htmlFor="upd-fee" hint="Boş bırakırsanız anlaşılan ücret kullanılır.">
+                <Input
+                  id="upd-fee"
+                  type="number"
+                  min={0}
+                  placeholder={appointment.agreedFee != null ? String(appointment.agreedFee) : 'Anlaşılan ücret'}
+                  value={currentFormData.sessionFee}
+                  onChange={(e) => setField({ sessionFee: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-solid px-4 py-3">
+              <div>
+                <p className="m-0 text-sm font-medium">Ödeme alındı</p>
+                <p className="m-0 text-xs text-muted-foreground">Ödemeler ve raporlar bu işarete göre hesaplanır.</p>
+              </div>
+              <Switch
+                checked={currentFormData.isPaid}
+                onCheckedChange={(checked) => setField({ isPaid: checked })}
+                aria-label="Ödeme alındı"
+              />
+            </div>
+
+            <div className="rounded-lg border border-solid bg-muted/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <Video className="size-4 text-primary" />
+                Google Meet
+              </div>
+              {!displayMeetLink ? (
+                <>
+                  <Button type="button" variant="outline" size="sm" onClick={handleMeetClick} disabled={creatingMeet || connectingGoogle}>
+                    {creatingMeet || connectingGoogle ? <Loader2 className="animate-spin" /> : <Video />}
+                    {connectingGoogle ? 'Google’a yönlendiriliyor...' : creatingMeet ? 'Meet oluşturuluyor...' : 'Meet linki oluştur'}
+                  </Button>
+                  <p className="m-0 mt-2 text-xs text-muted-foreground">
+                    Etkinlik Google Takviminize eklenir. Linki kopyalayıp danışanınıza kendiniz gönderebilirsiniz.
+                  </p>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" asChild>
+                    <a href={displayMeetLink} target="_blank" rel="noopener noreferrer">
+                      <Video />
+                      Toplantıya katıl
+                    </a>
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn-copy-meet"
+                    variant="outline"
+                    size="sm"
                     onClick={async () => {
                       await navigator.clipboard.writeText(displayMeetLink);
                       setCopied(true);
                       window.setTimeout(() => setCopied(false), 2000);
                     }}
                   >
-                    {copied ? 'Kopyalandı' : 'Kopyala'}
-                  </button>
+                    <Copy />
+                    {copied ? 'Kopyalandı' : 'Linki kopyala'}
+                  </Button>
+                  {appointment.googleHtmlLink ? (
+                    <Button type="button" variant="ghost" size="sm" asChild>
+                      <a href={appointment.googleHtmlLink} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink />
+                        Takvimde aç
+                      </a>
+                    </Button>
+                  ) : null}
                 </div>
-                {appointment.googleHtmlLink && (
-                  <a href={appointment.googleHtmlLink} target="_blank" rel="noopener noreferrer" className="calendar-link">
-                    Takvimde aç
-                  </a>
-                )}
-              </div>
-            )}
-            {meetError && <div className="error-message">{meetError}</div>}
-          </div>
-
-          {error && <div className="error-message">{error}</div>}
-          <div className="modal-actions modal-actions-with-delete">
-            <button
+              )}
+              {meetError ? <div className="mt-2"><FormError>{meetError}</FormError></div> : null}
+            </div>
+            <FormError>{error}</FormError>
+          </DialogBody>
+          <DialogFooter className="sm:justify-between">
+            <Button
               type="button"
+              variant="ghost"
+              className="text-destructive hover:bg-destructive/10"
               onClick={handleDelete}
-              className="btn-danger"
               disabled={deleting}
             >
+              <Trash2 />
               {deleting ? 'Siliniyor...' : 'Kalıcı sil'}
-            </button>
-            <div className="modal-actions-group">
-              <button type="button" onClick={onClose} className="btn-secondary">
-                İptal
-              </button>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? 'Güncelleniyor...' : 'Güncelle'}
-              </button>
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Vazgeç
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? <Loader2 className="animate-spin" /> : null}
+                {loading ? 'Kaydediliyor...' : 'Kaydet'}
+              </Button>
             </div>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

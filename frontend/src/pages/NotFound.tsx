@@ -1,15 +1,18 @@
 import { useNavigate } from 'react-router-dom';
-import './NotFound.css';
+import { Compass } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { EmptyState, PageContainer } from '@/components/ui/page';
 
 export const NotFound = () => {
   const navigate = useNavigate();
   return (
-    <div className="not-found">
-      <h1>Sayfa bulunamadı</h1>
-      <p>Bu adres uygulamada yok. Bugün ekranına dönebilirsiniz.</p>
-      <button type="button" onClick={() => navigate('/')}>
-        Bugüne dön
-      </button>
-    </div>
+    <PageContainer className="flex min-h-[70vh] items-center justify-center">
+      <EmptyState
+        icon={Compass}
+        title="Sayfa bulunamadı"
+        hint="Bu adres uygulamada yok. Bugün ekranına dönebilirsiniz."
+        action={<Button onClick={() => navigate('/')}>Bugüne dön</Button>}
+      />
+    </PageContainer>
   );
 };

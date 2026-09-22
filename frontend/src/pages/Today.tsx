@@ -1,56 +1,120 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllAppointments, getProfile, getUpcomingAppointments, updateAppointment } from '../services/api';
-import type { AppointmentStatus, AppointmentWithClient, UpdateAppointmentInput } from '../types';
-import { appointmentAmount, appointmentStatus, appointmentStatusLabel, sessionDurationLabel } from '../types';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { istanbulTodayYmd } from '../utils/dates';
-import './Today.css';
+import {
+  Banknote,
+  CalendarCheck2,
+  CalendarClock,
+  CalendarDays,
+  Check,
+  CircleDashed,
+  Clock3,
+  MoreHorizontal,
+  Undo2,
+  UserRound,
+  UserX,
+  Video,
+  Wallet,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import { apiErrorMessage, getAllAppointments, getProfile, getUpcomingAppointments, updateAppointment } from '@/services/api';
+import type { AppointmentStatus, AppointmentWithClient, UpdateAppointmentInput } from '@/types';
+import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel, sessionDurationLabel } from '@/types';
+import { istanbulTodayYmd } from '@/utils/dates';
+import { useToast } from '@/contexts/ToastContext';
+import { useConfirm } from '@/contexts/ConfirmDialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, EmptyState, LoadingRows, PageContainer, StatCard } from '@/components/ui/page';
+import { cn } from '@/lib/utils';
+
 const aptDateYmd = (dateStr: string): string =>
   dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.slice(0, 10);
 
-const formatMoney = (amount: number) => `${amount} ₺`;
+const parseYmd = (ymd: string) => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+};
+
+const formatMoney = (amount: number) => `${amount.toLocaleString('tr-TR')} ₺`;
+
+const istanbulHour = () =>
+  Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Istanbul', hour: '2-digit', hour12: false }).format(new Date()));
+
+const greeting = () => {
+  const hour = istanbulHour();
+  if (hour >= 5 && hour < 12) return 'Günaydın';
+  if (hour >= 12 && hour < 18) return 'İyi günler';
+  if (hour >= 18 && hour < 23) return 'İyi akşamlar';
+  return 'İyi geceler';
+};
+
+const STATUS_BADGE: Record<AppointmentStatus, 'neutral' | 'success' | 'danger' | 'muted'> = {
+  scheduled: 'neutral',
+  attended: 'success',
+  no_show: 'danger',
+  cancelled: 'muted',
+};
+
+const STATUS_ACTIONS: { value: AppointmentStatus; label: string; icon: LucideIcon }[] = [
+  { value: 'scheduled', label: 'Planlandı', icon: CircleDashed },
+  { value: 'attended', label: 'Geldi', icon: Check },
+  { value: 'no_show', label: 'Gelmedi', icon: UserX },
+];
 
 export const Today = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
+  const [upcoming, setUpcoming] = useState<AppointmentWithClient[]>([]);
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [upcoming, setUpcoming] = useState<AppointmentWithClient[]>([]);
 
   const loadAppointments = useCallback(async (silent = false) => {
     try {
-      if (!silent) {
-        setLoading(true);
-      }
+      if (!silent) setLoading(true);
       const [data, profile] = await Promise.all([getAllAppointments(), getProfile().catch(() => null)]);
       setAppointments(data);
-      const hours = profile?.reminderHours ?? 24;
-      setUpcoming(await getUpcomingAppointments(hours));
+      setDisplayName(profile?.displayName ?? '');
+      setUpcoming(await getUpcomingAppointments(profile?.reminderHours ?? 24));
     } catch (error) {
       console.error('Error loading today appointments:', error);
+      showToast('Randevular yüklenemedi.', 'error');
     } finally {
-      if (!silent) {
-        setLoading(false);
-      }
+      if (!silent) setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
-    loadAppointments();
+    void loadAppointments();
   }, [loadAppointments]);
 
   const today = istanbulTodayYmd();
-  const todayList = [...appointments]
+  const monthPrefix = today.slice(0, 7);
+
+  const todayList = appointments
     .filter((apt) => aptDateYmd(apt.appointmentDate) === today)
     .sort((a, b) => (a.appointmentTime || '00:00').localeCompare(b.appointmentTime || '00:00'));
+  const activeToday = todayList.filter((apt) => appointmentStatus(apt.status) !== 'cancelled');
+  const attendedToday = todayList.filter((apt) => appointmentStatus(apt.status) === 'attended');
 
-  const unpaidList = [...appointments]
+  const unpaidAll = appointments
     .filter(
       (apt) =>
-        !(apt.isPaid ?? 0) &&
+        !appointmentPaid(apt.isPaid) &&
         appointmentStatus(apt.status) !== 'cancelled' &&
         aptDateYmd(apt.appointmentDate) <= today
     )
@@ -58,20 +122,26 @@ export const Today = () => {
       const keyA = aptDateYmd(a.appointmentDate) + (a.appointmentTime || '00:00');
       const keyB = aptDateYmd(b.appointmentDate) + (b.appointmentTime || '00:00');
       return keyB.localeCompare(keyA);
-    })
-    .slice(0, 8);
+    });
+  const unpaidTotal = unpaidAll.reduce((sum, apt) => sum + appointmentAmount(apt), 0);
 
-  const formatDate = (dateStr: string) => {
-    const d = aptDateYmd(dateStr);
-    return format(new Date(d), 'd MMMM yyyy', { locale: tr });
+  const collectedThisMonth = appointments
+    .filter((apt) => appointmentPaid(apt.isPaid) && aptDateYmd(apt.appointmentDate).startsWith(monthPrefix))
+    .reduce((sum, apt) => sum + appointmentAmount(apt), 0);
+
+  const nextSession = upcoming[0];
+  const laterUpcoming = upcoming.filter((apt) => aptDateYmd(apt.appointmentDate) !== today);
+
+  const dayLabel = (ymd: string) => {
+    if (ymd === today) return 'Bugün';
+    const tomorrow = new Date(parseYmd(today));
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (ymd === format(tomorrow, 'yyyy-MM-dd')) return 'Yarın';
+    return format(parseYmd(ymd), 'd MMM', { locale: tr });
   };
 
-  const headingDate = format(new Date(today), 'd MMMM yyyy', { locale: tr });
-
   const handlePatch = async (apt: AppointmentWithClient, patch: UpdateAppointmentInput) => {
-    const previousStatus = apt.status;
-    const previousPaid = apt.isPaid;
-    setStatusError(null);
+    const previous = { status: apt.status, isPaid: apt.isPaid };
     setUpdatingId(apt.id);
     setAppointments((current) =>
       current.map((item) =>
@@ -88,179 +158,250 @@ export const Today = () => {
       await updateAppointment(apt.clientId, apt.id, patch);
       await loadAppointments(true);
     } catch (error: unknown) {
-      setAppointments((current) =>
-        current.map((item) =>
-          item.id === apt.id ? { ...item, status: previousStatus, isPaid: previousPaid } : item
-        )
-      );
-      const msg =
-        error && typeof error === 'object' && 'response' in error
-          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-          : null;
-      setStatusError(msg || 'Durum kaydedilemedi.');
+      setAppointments((current) => current.map((item) => (item.id === apt.id ? { ...item, ...previous } : item)));
+      showToast(apiErrorMessage(error, 'Değişiklik kaydedilemedi.'), 'error');
     } finally {
       setUpdatingId(null);
     }
   };
 
-  const handleStatus = (apt: AppointmentWithClient, status: AppointmentStatus) => {
-    void handlePatch(apt, { status });
+  const handleCancel = async (apt: AppointmentWithClient) => {
+    const ok = await confirm({
+      title: 'Seansı iptal et',
+      message: `${apt.clientName || 'Danışan'} · ${apt.appointmentTime || ''} seansı iptal edilsin mi? Saat boşalır, kayıt ve notlar durur.`,
+      confirmLabel: 'İptal et',
+      danger: true,
+    });
+    if (ok) void handlePatch(apt, { status: 'cancelled' });
   };
 
-  const handlePaid = (apt: AppointmentWithClient, isPaid: boolean) => {
-    void handlePatch(apt, { isPaid });
-  };
+  const headingDate = format(parseYmd(today), 'd MMMM yyyy, EEEE', { locale: tr });
+  const firstName = displayName.trim().split(/\s+/).slice(0, 2).join(' ');
 
   return (
-    <div className="today-container">
-      <h1 className="today-title">Bugün</h1>
-      <p className="today-subtitle">{headingDate}</p>
-      {statusError ? <div className="today-error">{statusError}</div> : null}
-      {!loading && upcoming.length > 0 ? (
-        <div className="today-error" style={{ background: 'rgba(40, 167, 69, 0.12)', color: 'inherit' }}>
-          Yaklaşan seanslar:{' '}
-          {upcoming
-            .map(
-              (apt) =>
-                `${apt.appointmentTime || ''} ${apt.clientName || 'Danışan'}`
-            )
-            .join(' · ')}
-        </div>
-      ) : null}
+    <PageContainer>
+      <header className="mb-6">
+        <p className="text-sm text-muted-foreground">{headingDate}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-[28px]">
+          {greeting()}
+          {firstName ? `, ${firstName}` : ''}
+        </h1>
+      </header>
 
-      {loading ? (
-        <div className="today-loading">Yükleniyor...</div>
-      ) : (
-        <>
-          <section className="today-section">
-            <h2 className="today-section-title">Bugünün seansları</h2>
-            {todayList.length === 0 ? (
-              <div className="today-empty">Bugün randevu yok.</div>
-            ) : (
-              <ul className="today-list">
-                {todayList.map((apt) => (
-                  <li key={apt.id} className="today-item">
+      <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Özet">
+        <StatCard
+          icon={CalendarCheck2}
+          label="Bugünkü seanslar"
+          value={loading ? '–' : String(activeToday.length)}
+          hint={loading ? 'Yükleniyor' : `${attendedToday.length} tamamlandı`}
+        />
+        <StatCard
+          icon={Clock3}
+          label="Sıradaki seans"
+          value={loading ? '–' : nextSession ? nextSession.appointmentTime || '--:--' : 'Yok'}
+          hint={
+            nextSession
+              ? `${dayLabel(aptDateYmd(nextSession.appointmentDate))} · ${nextSession.clientName || 'Danışan'}`
+              : 'Yakın zamanda seans yok'
+          }
+        />
+        <StatCard
+          icon={Wallet}
+          label="Bekleyen ödeme"
+          value={loading ? '–' : formatMoney(unpaidTotal)}
+          hint={`${unpaidAll.length} seans`}
+          tone={unpaidTotal > 0 ? 'warning' : 'default'}
+        />
+        <StatCard
+          icon={Banknote}
+          label="Bu ay tahsilat"
+          value={loading ? '–' : formatMoney(collectedThisMonth)}
+          hint={format(parseYmd(today), 'MMMM yyyy', { locale: tr })}
+          tone="success"
+        />
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Bugünün seansları</CardTitle>
+              <CardDescription className="mt-1">Durumu ve ödemeyi buradan işaretleyin.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate('/takvim')}>
+              <CalendarDays />
+              Takvim
+            </Button>
+          </CardHeader>
+          {loading ? (
+            <LoadingRows />
+          ) : todayList.length === 0 ? (
+            <EmptyState icon={CalendarCheck2} title="Bugün seans yok" hint="Takvimden yeni randevu ekleyebilirsiniz." />
+          ) : (
+            <ul className="m-0 mt-4 list-none divide-y divide-border p-0">
+              {todayList.map((apt) => {
+                const status = appointmentStatus(apt.status);
+                const paid = appointmentPaid(apt.isPaid);
+                const cancelled = status === 'cancelled';
+                const busy = updatingId === apt.id;
+                return (
+                  <li
+                    key={apt.id}
+                    className={cn('flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4', cancelled && 'opacity-60')}
+                  >
+                    <div className="w-12 shrink-0 text-[15px] font-semibold tabular-nums">{apt.appointmentTime || '--:--'}</div>
                     <button
                       type="button"
-                      className="today-row"
                       onClick={() => navigate(`/client/${apt.clientId}`)}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 border-0 bg-transparent p-0 text-left text-foreground [font-family:inherit]"
                     >
-                      <span className="today-time">{apt.appointmentTime || '--:--'}</span>
-                      <span className="today-main">
-                        <span className="today-name">{apt.clientName || 'İsimsiz'}</span>
-                        <span className="today-apt-title">
+                      <Avatar name={apt.clientName} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium hover:underline">{apt.clientName || 'İsimsiz'}</span>
+                        <span className="block truncate text-[13px] text-muted-foreground">
                           {sessionDurationLabel(apt.durationMinutes)}
                           {apt.title ? ` · ${apt.title}` : ''}
                           {apt.roomName ? ` · ${apt.roomName}` : ''}
                         </span>
                       </span>
-                      <span className={`today-badge status-${appointmentStatus(apt.status)}`}>
-                        {appointmentStatusLabel(apt.status)}
-                      </span>
-                      <span className={`today-badge ${apt.isPaid ? 'paid' : 'unpaid'}`}>
-                        {apt.isPaid ? 'Ödendi' : 'Bekliyor'}
-                      </span>
                     </button>
-                    <div className="today-status-actions">
-                      <button
-                        type="button"
-                        className={`today-status-btn ${appointmentStatus(apt.status) === 'scheduled' ? 'active-scheduled' : ''}`}
-                        disabled={updatingId === apt.id}
-                        onClick={() => handleStatus(apt, 'scheduled')}
-                      >
-                        Planlandı
-                      </button>
-                      <button
-                        type="button"
-                        className={`today-status-btn ${appointmentStatus(apt.status) === 'attended' ? 'active-attended' : ''}`}
-                        disabled={updatingId === apt.id}
-                        onClick={() => handleStatus(apt, 'attended')}
-                      >
-                        Geldi
-                      </button>
-                      <button
-                        type="button"
-                        className={`today-status-btn ${appointmentStatus(apt.status) === 'no_show' ? 'active-noshow' : ''}`}
-                        disabled={updatingId === apt.id}
-                        onClick={() => handleStatus(apt, 'no_show')}
-                      >
-                        Gelmedi
-                      </button>
-                      <button
-                        type="button"
-                        className={`today-status-btn ${appointmentStatus(apt.status) === 'cancelled' ? 'active-cancelled' : ''}`}
-                        disabled={updatingId === apt.id}
-                        onClick={() => handleStatus(apt, 'cancelled')}
-                      >
-                        İptal
-                      </button>
-                      <button
-                        type="button"
-                        className={`today-status-btn ${apt.isPaid ? 'active-paid' : ''}`}
-                        disabled={updatingId === apt.id}
-                        onClick={() => handlePaid(apt, !apt.isPaid)}
-                      >
-                        {apt.isPaid ? 'Ödendi' : 'Ödeme al'}
-                      </button>
+                    <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                      <Badge variant={STATUS_BADGE[status]}>{appointmentStatusLabel(status)}</Badge>
+                      {cancelled ? null : paid ? (
+                        <Badge variant="success">
+                          <Check className="size-3" />
+                          Ödendi
+                        </Badge>
+                      ) : (
+                        <Button variant="success" size="sm" disabled={busy} onClick={() => void handlePatch(apt, { isPaid: true })}>
+                          <Banknote />
+                          Ödeme al
+                        </Button>
+                      )}
+                      {status === 'scheduled' ? (
+                        <Button variant="outline" size="sm" disabled={busy} onClick={() => void handlePatch(apt, { status: 'attended' })}>
+                          <Check />
+                          Geldi
+                        </Button>
+                      ) : null}
+                      {apt.googleMeetLink ? (
+                        <Button variant="ghost" size="icon-sm" asChild>
+                          <a href={apt.googleMeetLink} target="_blank" rel="noreferrer" aria-label="Meet toplantısına katıl" title="Meet">
+                            <Video />
+                          </a>
+                        </Button>
+                      ) : null}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon-sm" disabled={busy} aria-label="Diğer işlemler">
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Durum</DropdownMenuLabel>
+                          {STATUS_ACTIONS.map((action) => (
+                            <DropdownMenuItem
+                              key={action.value}
+                              onSelect={() => void handlePatch(apt, { status: action.value })}
+                              className={cn(status === action.value && 'font-semibold')}
+                            >
+                              <action.icon />
+                              {action.label}
+                              {status === action.value ? <Check className="ml-auto" /> : null}
+                            </DropdownMenuItem>
+                          ))}
+                          {!cancelled ? (
+                            <DropdownMenuItem destructive onSelect={() => void handleCancel(apt)}>
+                              <X />
+                              İptal et
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuSeparator />
+                          {paid ? (
+                            <DropdownMenuItem onSelect={() => void handlePatch(apt, { isPaid: false })}>
+                              <Undo2 />
+                              Ödemeyi geri al
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem onSelect={() => navigate(`/client/${apt.clientId}`)}>
+                            <UserRound />
+                            Danışan sayfası
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    {apt.googleMeetLink ? (
-                      <a
-                        className="today-meet"
-                        href={apt.googleMeetLink}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Meet
-                      </a>
-                    ) : null}
                   </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
 
-          <section className="today-section">
-            <div className="today-section-head">
-              <h2 className="today-section-title">Ödenmemişler</h2>
-              <button type="button" className="today-link-btn" onClick={() => navigate('/odemeler')}>
-                Tüm ödemeler
-              </button>
-            </div>
-            {unpaidList.length === 0 ? (
-              <div className="today-empty today-empty-sm">Ödenmemiş randevu yok.</div>
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ödenmemişler</CardTitle>
+              <Button variant="ghost" size="sm" className="-mr-2 text-primary" onClick={() => navigate('/odemeler')}>
+                Tümü
+              </Button>
+            </CardHeader>
+            {loading ? (
+              <LoadingRows />
+            ) : unpaidAll.length === 0 ? (
+              <EmptyState icon={Check} title="Bekleyen ödeme yok" />
             ) : (
-              <ul className="today-list">
-                {unpaidList.map((apt) => (
-                  <li key={apt.id} className="today-item">
+              <ul className="m-0 mt-3 list-none divide-y divide-border p-0">
+                {unpaidAll.slice(0, 6).map((apt) => (
+                  <li key={apt.id} className="flex items-center gap-3 px-5 py-3">
                     <button
                       type="button"
-                      className="today-row"
                       onClick={() => navigate(`/client/${apt.clientId}`)}
+                      className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 text-left text-foreground [font-family:inherit]"
                     >
-                      <span className="today-date">{formatDate(apt.appointmentDate)}</span>
-                      <span className="today-time">{apt.appointmentTime || '--:--'}</span>
-                      <span className="today-main">
-                        <span className="today-name">{apt.clientName || 'İsimsiz'}</span>
+                      <span className="block truncate text-sm font-medium">{apt.clientName || 'İsimsiz'}</span>
+                      <span className="block text-[13px] text-muted-foreground">
+                        {dayLabel(aptDateYmd(apt.appointmentDate))} · {apt.appointmentTime || '--:--'}
                       </span>
-                      <span className="today-fee">{formatMoney(appointmentAmount(apt))}</span>
                     </button>
-                    <div className="today-status-actions">
-                      <button
-                        type="button"
-                        className="today-status-btn"
-                        disabled={updatingId === apt.id}
-                        onClick={() => handlePaid(apt, true)}
-                      >
-                        Ödendi
-                      </button>
-                    </div>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(appointmentAmount(apt))}</span>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      disabled={updatingId === apt.id}
+                      onClick={() => void handlePatch(apt, { isPaid: true })}
+                      aria-label={`${apt.clientName || 'Danışan'} ödemesini alındı olarak işaretle`}
+                      title="Ödendi olarak işaretle"
+                    >
+                      <Check />
+                    </Button>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
-        </>
-      )}
-    </div>
+          </Card>
+
+          {!loading && laterUpcoming.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Yaklaşan</CardTitle>
+                <CalendarClock className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <ul className="m-0 mt-3 list-none divide-y divide-border p-0">
+                {laterUpcoming.map((apt) => (
+                  <li key={apt.id} className="flex items-center gap-3 px-5 py-3">
+                    <span className="w-14 shrink-0 text-[13px] font-medium text-muted-foreground">
+                      {dayLabel(aptDateYmd(apt.appointmentDate))}
+                    </span>
+                    <span className="w-11 shrink-0 text-sm font-semibold tabular-nums">{apt.appointmentTime || '--:--'}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{apt.clientName || 'Danışan'}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
+      </div>
+    </PageContainer>
   );
 };
+

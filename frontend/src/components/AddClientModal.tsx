@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
+import { Loader2 } from 'lucide-react';
 import { apiErrorMessage, createClient } from '../services/api';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import './AddClientModal.css';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Field, FormError, Input } from '@/components/ui/input';
 
 interface AddClientModalProps {
   isOpen: boolean;
@@ -9,31 +11,20 @@ interface AddClientModalProps {
   onSuccess: () => void;
 }
 
+const emptyForm = () => ({
+  email: '',
+  name: '',
+  birthDate: '',
+  agreedFee: 2000,
+  phone: '',
+  emergencyName: '',
+  emergencyPhone: '',
+});
+
 export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalProps) => {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(isOpen, dialogRef);
-  const [formData, setFormData] = useState({
-    email: '',
-    name: '',
-    birthDate: '',
-    agreedFee: 2000,
-    phone: '',
-    emergencyName: '',
-    emergencyPhone: '',
-  });
+  const [formData, setFormData] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -43,7 +34,6 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
       return;
     }
     setLoading(true);
-
     try {
       await createClient({
         name: formData.name.trim(),
@@ -55,15 +45,7 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
         emergencyPhone: formData.emergencyPhone.trim() || undefined,
       });
       onSuccess();
-      setFormData({
-        email: '',
-        name: '',
-        birthDate: '',
-        agreedFee: 2000,
-        phone: '',
-        emergencyName: '',
-        emergencyPhone: '',
-      });
+      setFormData(emptyForm());
       onClose();
     } catch (err) {
       setError(apiErrorMessage(err, 'Danışan eklenirken bir hata oluştu.'));
@@ -73,102 +55,77 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
     }
   };
 
+  const update = (patch: Partial<ReturnType<typeof emptyForm>>) => setFormData((prev) => ({ ...prev, ...patch }));
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        className="modal-content"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-client-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2 id="add-client-title">Yeni Danışan Ekle</h2>
-          <button className="close-button" onClick={onClose} aria-label="Kapat">×</button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(open) => (open ? null : onClose())}>
+      <DialogContent title="Yeni danışan" description="Sadece ad soyad zorunlu; diğer bilgileri sonra da ekleyebilirsiniz.">
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="name">Ad Soyad *</label>
-            <input
-              type="text"
-              id="name"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="email">E-posta</label>
-            <input
-              type="email"
-              id="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="birthDate">Doğum Tarihi</label>
-            <input
-              type="date"
-              id="birthDate"
-              value={formData.birthDate}
-              onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="phone">Telefon</label>
-            <input
-              type="tel"
-              id="phone"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="05xx xxx xx xx"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="emergencyName">Acil kişi</label>
-            <input
-              type="text"
-              id="emergencyName"
-              value={formData.emergencyName}
-              onChange={(e) => setFormData({ ...formData, emergencyName: e.target.value })}
-              placeholder="Ad soyad"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="emergencyPhone">Acil kişi telefonu</label>
-            <input
-              type="tel"
-              id="emergencyPhone"
-              value={formData.emergencyPhone}
-              onChange={(e) => setFormData({ ...formData, emergencyPhone: e.target.value })}
-              placeholder="05xx xxx xx xx"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="agreedFee">Anlaşılan Ücret (₺)</label>
-            <input
-              type="number"
-              id="agreedFee"
-              min={0}
-              step={100}
-              value={formData.agreedFee}
-              onChange={(e) => setFormData({ ...formData, agreedFee: Number(e.target.value) || 0 })}
-            />
-          </div>
-          {error && <div className="error-message">{error}</div>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              İptal
-            </button>
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Ekleniyor...' : 'Ekle'}
-            </button>
-          </div>
+          <DialogBody>
+            <Field label="Ad soyad *" htmlFor="client-name">
+              <Input id="client-name" required value={formData.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="E-posta" htmlFor="client-email">
+                <Input id="client-email" type="email" value={formData.email} onChange={(e) => update({ email: e.target.value })} />
+              </Field>
+              <Field label="Telefon" htmlFor="client-phone">
+                <Input
+                  id="client-phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => update({ phone: e.target.value })}
+                  placeholder="05xx xxx xx xx"
+                />
+              </Field>
+              <Field label="Doğum tarihi" htmlFor="client-birthDate">
+                <Input id="client-birthDate" type="date" value={formData.birthDate} onChange={(e) => update({ birthDate: e.target.value })} />
+              </Field>
+              <Field label="Anlaşılan ücret (₺)" htmlFor="client-fee">
+                <Input
+                  id="client-fee"
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={formData.agreedFee}
+                  onChange={(e) => update({ agreedFee: Number(e.target.value) || 0 })}
+                />
+              </Field>
+            </div>
+            <div className="rounded-lg border border-solid bg-muted/40 p-4">
+              <p className="m-0 mb-3 text-[13px] font-medium text-muted-foreground">Acil durumda aranacak kişi</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Ad soyad" htmlFor="client-emergencyName">
+                  <Input
+                    id="client-emergencyName"
+                    value={formData.emergencyName}
+                    onChange={(e) => update({ emergencyName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Telefon" htmlFor="client-emergencyPhone">
+                  <Input
+                    id="client-emergencyPhone"
+                    type="tel"
+                    value={formData.emergencyPhone}
+                    onChange={(e) => update({ emergencyPhone: e.target.value })}
+                    placeholder="05xx xxx xx xx"
+                  />
+                </Field>
+              </div>
+            </div>
+            <FormError>{error}</FormError>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Vazgeç
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : null}
+              {loading ? 'Ekleniyor...' : 'Danışanı ekle'}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

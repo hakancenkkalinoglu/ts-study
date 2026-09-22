@@ -22,7 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ClinicService {
 
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    private static final String[] DEFAULT_ROOM_COLORS = {"#4f46e5", "#0f766e", "#c2410c", "#7c3aed"};
+    private static final String[] DEFAULT_ROOM_COLORS = {"#8b5e3c", "#3f7f6e", "#a86a2f", "#6d5a8c"};
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private static final RowMapper<ClinicRoomResponse> ROOM_MAPPER = (rs, rowNum) -> new ClinicRoomResponse(

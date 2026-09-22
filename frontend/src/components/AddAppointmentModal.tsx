@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
+import { Loader2, Search, X } from 'lucide-react';
 import { apiErrorMessage, createAppointment, getAppointmentById, getClients, getClinicRooms } from '../services/api';
 import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
 import { sessionDuration, sessionDurationOptions } from '../types';
 import { istanbulTodayYmd } from '../utils/dates';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import './AddClientModal.css';
-import './AddAppointmentModal.css';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Field, FormError, Input, NativeSelect } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/page';
 
 interface AddAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Called after create; if createdAppointment is passed, parent should open update modal with it. */
   onSuccess: (createdAppointment?: AppointmentWithClient | null) => void;
   initialDate?: string;
   initialTime?: string;
@@ -51,9 +52,7 @@ export const AddAppointmentModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const debouncedSearch = useDebounce(searchTerm, 300);
-  useFocusTrap(isOpen, dialogRef);
 
   const fetchClients = useCallback(async (term: string) => {
     setSearching(true);
@@ -91,6 +90,7 @@ export const AddAppointmentModal = ({
       setSearchTerm('');
       setDropdownOpen(false);
       setClients([]);
+      setError(null);
       getClinicRooms()
         .then(setRooms)
         .catch(() => setRooms([]));
@@ -118,24 +118,9 @@ export const AddAppointmentModal = ({
   };
 
   const handleClearClient = () => {
-    setFormData((prev) => ({
-      ...prev,
-      clientId: 0,
-      selectedClientName: '',
-    }));
+    setFormData((prev) => ({ ...prev, clientId: 0, selectedClientName: '' }));
     setSearchTerm('');
   };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -145,7 +130,6 @@ export const AddAppointmentModal = ({
       return;
     }
     setLoading(true);
-
     try {
       const result = await createAppointment({
         clientId: formData.clientId,
@@ -176,43 +160,27 @@ export const AddAppointmentModal = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        className="modal-content"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-apt-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2 id="add-apt-title">Yeni Randevu Ekle</h2>
-          <button className="close-button" onClick={onClose} aria-label="Kapat">
-            ×
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(open) => (open ? null : onClose())}>
+      <DialogContent title="Yeni randevu">
         <form onSubmit={handleSubmit}>
-          <div className="form-group" ref={dropdownRef}>
-            <label htmlFor="client-search">Danışan *</label>
-            <div className="client-combobox">
+          <DialogBody>
+            <div className="flex flex-col gap-1.5" ref={dropdownRef}>
+              <label htmlFor="client-search" className="text-[13px] font-medium">
+                Danışan *
+              </label>
               {formData.clientId ? (
-                <div className="client-selected">
-                  <span>{formData.selectedClientName}</span>
-                  <button
-                    type="button"
-                    className="client-clear-btn"
-                    onClick={handleClearClient}
-                    title="Değiştir"
-                  >
-                    ×
-                  </button>
+                <div className="flex h-10 items-center gap-2.5 rounded-md border border-solid border-input bg-accent/40 pl-1.5 pr-1">
+                  <Avatar name={formData.selectedClientName} className="size-7 text-[11px]" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{formData.selectedClientName}</span>
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={handleClearClient} aria-label="Danışanı değiştir">
+                    <X />
+                  </Button>
                 </div>
               ) : (
-                <>
-                  <input
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
                     id="client-search"
-                    type="text"
                     placeholder="Ad veya e-posta ile ara..."
                     value={searchTerm}
                     onChange={(e) => {
@@ -221,119 +189,113 @@ export const AddAppointmentModal = ({
                     }}
                     onFocus={() => setDropdownOpen(true)}
                     autoComplete="off"
-                    className="form-select client-search-input"
+                    className="pl-9"
+                    autoFocus
                   />
-                  {dropdownOpen && (
-                    <div className="client-dropdown">
+                  {dropdownOpen ? (
+                    <div className="absolute inset-x-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-lg border border-solid bg-popover p-1 shadow-lg">
                       {searching ? (
-                        <div className="client-dropdown-loading">Aranıyor...</div>
+                        <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted-foreground">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Aranıyor...
+                        </div>
                       ) : clients.length === 0 ? (
-                        <div className="client-dropdown-empty">
-                          {searchTerm.trim().length < 2
-                            ? 'En az 2 karakter yazın'
-                            : 'Sonuç bulunamadı'}
+                        <div className="px-3 py-2.5 text-[13px] text-muted-foreground">
+                          {searchTerm.trim().length < 2 ? 'En az 2 harf yazın' : 'Sonuç bulunamadı'}
                         </div>
                       ) : (
                         clients.map((c) => (
                           <button
                             key={c.id}
                             type="button"
-                            className="client-dropdown-item"
+                            className="flex w-full cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent px-2 py-2 text-left text-foreground [font-family:inherit] hover:bg-accent"
                             onClick={() => handleSelectClient(c)}
                           >
-                            {c.name || c.email || 'İsimsiz'}
-                            {c.email && c.name && (
-                              <span className="client-email">{c.email}</span>
-                            )}
+                            <Avatar name={c.name || c.email} className="size-7 text-[11px]" />
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium">{c.name || c.email || 'İsimsiz'}</span>
+                              {c.email && c.name ? (
+                                <span className="block truncate text-xs text-muted-foreground">{c.email}</span>
+                              ) : null}
+                            </span>
                           </button>
                         ))
                       )}
                     </div>
-                  )}
-                </>
+                  ) : null}
+                </div>
               )}
             </div>
-          </div>
-          <div className="form-group">
-            <label htmlFor="appointmentDate">Tarih *</label>
-            <input
-              type="date"
-              id="appointmentDate"
-              required
-              value={formData.appointmentDate}
-              onChange={(e) =>
-                setFormData({ ...formData, appointmentDate: e.target.value })
-              }
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="appointmentTime">Saat *</label>
-            <input
-              type="time"
-              id="appointmentTime"
-              required
-              value={formData.appointmentTime}
-              onChange={(e) =>
-                setFormData({ ...formData, appointmentTime: e.target.value })
-              }
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="durationMinutes">Süre *</label>
-            <select
-              id="durationMinutes"
-              value={formData.durationMinutes}
-              onChange={(e) =>
-                setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })
-              }
-            >
-              {sessionDurationOptions(formData.durationMinutes).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {rooms.length > 0 ? (
-            <div className="form-group">
-              <label htmlFor="roomId">Oda</label>
-              <select
-                id="roomId"
-                value={formData.roomId}
-                onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
-              >
-                <option value={0}>Seçilmedi</option>
-                {rooms.map((room) => (
-                  <option key={room.id} value={room.id}>
-                    {room.name}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <Field label="Tarih *" htmlFor="appointmentDate" className="col-span-2 sm:col-span-1">
+                <Input
+                  type="date"
+                  id="appointmentDate"
+                  required
+                  value={formData.appointmentDate}
+                  onChange={(e) => setFormData({ ...formData, appointmentDate: e.target.value })}
+                />
+              </Field>
+              <Field label="Saat *" htmlFor="appointmentTime">
+                <Input
+                  type="time"
+                  id="appointmentTime"
+                  required
+                  value={formData.appointmentTime}
+                  onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
+                />
+              </Field>
+              <Field label="Süre *" htmlFor="durationMinutes">
+                <NativeSelect
+                  id="durationMinutes"
+                  value={formData.durationMinutes}
+                  onChange={(e) => setFormData({ ...formData, durationMinutes: sessionDuration(Number(e.target.value)) })}
+                >
+                  {sessionDurationOptions(formData.durationMinutes).map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
             </div>
-          ) : null}
-          <div className="form-group">
-            <label htmlFor="title">Başlık</label>
-            <input
-              type="text"
-              id="title"
-              placeholder="Opsiyonel"
-              value={formData.title}
-              onChange={(e) =>
-                setFormData({ ...formData, title: e.target.value })
-              }
-            />
-          </div>
-          {error && <div className="error-message">{error}</div>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              İptal
-            </button>
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Ekleniyor...' : 'Ekle'}
-            </button>
-          </div>
+            {rooms.length > 0 ? (
+              <Field label="Oda" htmlFor="roomId">
+                <NativeSelect
+                  id="roomId"
+                  value={formData.roomId}
+                  onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
+                >
+                  <option value={0}>Seçilmedi</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            ) : null}
+            <Field label="Başlık" htmlFor="title" hint="Takvimde danışan adının yanında görünür.">
+              <Input
+                id="title"
+                placeholder="Örn. İlk görüşme"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              />
+            </Field>
+            <FormError>{error}</FormError>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Vazgeç
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : null}
+              {loading ? 'Ekleniyor...' : 'Randevuyu ekle'}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

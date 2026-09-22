@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ConfirmProvider } from './contexts/ConfirmDialog';
-import { MainNav } from './components/MainNav';
+import { AppShell } from './components/AppShell';
 import { Login } from './pages/Login';
 import { Today } from './pages/Today';
 import { ClientsList } from './pages/ClientsList';
@@ -15,7 +15,6 @@ import { ClinicPage } from './pages/Clinic';
 import { Account } from './pages/Account';
 import { NotFound } from './pages/NotFound';
 import { exchangeGoogleAuth, getStoredToken, setStoredToken } from './services/api';
-import './App.css';
 
 const readAuthCodeFromUrl = (): string | null => {
   const params = new URLSearchParams(window.location.search);
@@ -97,8 +96,7 @@ function App() {
   return (
     <AppProviders>
       <Router>
-        <div className="app">
-          <MainNav onLogout={() => setToken(null)} />
+        <AppShell onLogout={() => setToken(null)}>
           <Routes>
             <Route path="/" element={<Today />} />
             <Route path="/danisanlar" element={<ClientsList />} />
@@ -110,7 +108,7 @@ function App() {
             <Route path="/client/:id" element={<ClientDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </div>
+        </AppShell>
       </Router>
     </AppProviders>
   );

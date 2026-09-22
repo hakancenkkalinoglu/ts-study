@@ -156,7 +156,7 @@ export type Clinic = {
   rooms: ClinicRoom[];
 };
 
-export const THERAPIST_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+export const THERAPIST_COLORS = ['#7a4a2b', '#3f7f6e', '#a86a2f', '#6d5a8c', '#4f6f8f', '#9a4f4f'];
 
 export const therapistColor = (userId?: number | null): string | undefined => {
   if (userId == null) return undefined;
