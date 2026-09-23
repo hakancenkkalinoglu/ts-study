@@ -99,17 +99,21 @@ public class AppointmentService {
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
         if (!CANCELLED.equals(status)) {
+            scheduleService.lockTherapistSchedule(userId);
             assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
         }
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO appointments (
-                  clientId, appointmentDate, appointmentTime, title, isPaid, status,
+                  clientId, userId, appointmentDate, appointmentTime, title, isPaid, status,
                   clinicId, roomId, durationMinutes, sessionFee, createdAt, updatedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 clientId,
+                userId,
                 dateStr,
                 timeStr,
                 blankToNull(input.title()),
@@ -120,7 +124,6 @@ public class AppointmentService {
                 duration,
                 sessionFee
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return List.of(id == null ? 0L : id);
     }
 
@@ -137,32 +140,41 @@ public class AppointmentService {
     }
 
     public List<AppointmentResponse> getAll(long userId, String scope) {
+        return getAll(userId, scope, null, null);
+    }
+
+    public List<AppointmentResponse> getAll(long userId, String scope, String from, String to) {
         boolean clinicScope = "clinic".equalsIgnoreCase(scope);
         Long clinicId = clinicScope ? clinicService.clinicIdForUser(userId) : null;
-        List<AppointmentResponse> rows;
-        if (clinicId != null) {
-            rows = jdbc.query(
-                    APPOINTMENT_SELECT
-                            + " WHERE c.userId IN (SELECT userId FROM clinic_members WHERE clinicId = ?)"
-                            + " ORDER BY a.appointmentDate ASC, a.appointmentTime ASC",
-                    APPOINTMENT_MAPPER,
-                    clinicId
-            );
-        } else {
-            rows = jdbc.query(
-                    APPOINTMENT_SELECT + " WHERE c.userId = ? ORDER BY a.appointmentDate ASC, a.appointmentTime ASC",
-                    APPOINTMENT_MAPPER,
-                    userId
-            );
+        boolean ranged = from != null && !from.isBlank() && to != null && !to.isBlank();
+        String rangeFilter = ranged ? " AND a.appointmentDate BETWEEN ? AND ?" : "";
+        String ownerFilter = clinicId != null
+                ? " WHERE c.userId IN (SELECT userId FROM clinic_members WHERE clinicId = ?)"
+                : " WHERE c.userId = ?";
+        List<Object> args = new ArrayList<>();
+        args.add(clinicId != null ? clinicId : userId);
+        if (ranged) {
+            args.add(ScheduleInputs.requireDate(from));
+            args.add(ScheduleInputs.requireDate(to));
         }
+        List<AppointmentResponse> rows = jdbc.query(
+                APPOINTMENT_SELECT + ownerFilter + rangeFilter + " ORDER BY a.appointmentDate ASC, a.appointmentTime ASC",
+                APPOINTMENT_MAPPER,
+                args.toArray()
+        );
         return markMine(rows, userId);
     }
 
     public List<AppointmentResponse> getUpcoming(long userId, int hours) {
         int window = hours <= 0 ? 24 : Math.min(hours, 72);
-        List<AppointmentResponse> mine = getAll(userId, null);
         ZoneId zone = ZoneId.of("Europe/Istanbul");
         ZonedDateTime now = ZonedDateTime.now(zone);
+        List<AppointmentResponse> mine = getAll(
+                userId,
+                null,
+                now.toLocalDate().toString(),
+                now.toLocalDate().plusDays(4).toString()
+        );
         ZonedDateTime until = now.plusHours(window);
         List<AppointmentResponse> upcoming = new ArrayList<>();
         for (AppointmentResponse apt : mine) {
@@ -195,6 +207,7 @@ public class AppointmentService {
         return markMine(rows, userId).get(0);
     }
 
+    @Transactional
     public int update(long userId, long appointmentId, long clientId, UpdateAppointmentRequest data) {
         clientService.requireOwned(userId, clientId);
         List<AppointmentResponse> currentRows = jdbc.query(
@@ -239,6 +252,7 @@ public class AppointmentService {
                 || !Objects.equals(newRoomId, current.roomId());
         boolean reactivated = CANCELLED.equals(currentStatus) && willBeActive;
         if (willBeActive && (scheduleChanged || reactivated)) {
+            scheduleService.lockTherapistSchedule(userId);
             assertNoConflict(userId, newDate, newTime, newDuration, newRoomId, appointmentId);
         }
         Integer isPaidVal = data.isPaid() == null ? null : (Boolean.TRUE.equals(data.isPaid()) ? 1 : 0);
@@ -254,13 +268,13 @@ public class AppointmentService {
                   appointmentDate = COALESCE(?, appointmentDate),
                   appointmentTime = COALESCE(?, appointmentTime),
                   title = CASE WHEN ? = 1 THEN ? ELSE title END,
-                  isPaid = CASE WHEN ? IS NOT NULL THEN ? ELSE isPaid END,
+                  isPaid = CASE WHEN CAST(? AS INTEGER) IS NOT NULL THEN ? ELSE isPaid END,
                   status = COALESCE(?, status),
                   clinicId = ?,
                   roomId = ?,
                   durationMinutes = COALESCE(?, durationMinutes),
                   sessionFee = CASE WHEN ? = 1 THEN ? ELSE sessionFee END,
-                  updatedAt = datetime('now')
+                  updatedAt = utc_now_text()
                 WHERE id = ? AND clientId = ?
                 """,
                 data.appointmentDate() != null ? newDate : null,
@@ -318,7 +332,7 @@ public class AppointmentService {
         return jdbc.update(
                 """
                 UPDATE appointments
-                SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = datetime('now')
+                SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = utc_now_text()
                 WHERE id = ?
                 """,
                 eventId,
@@ -357,13 +371,13 @@ public class AppointmentService {
                 SELECT a.id, a.appointmentTime, a.durationMinutes
                 FROM appointments a
                 INNER JOIN clients c ON a.clientId = c.id
-                WHERE c.userId = ? AND a.appointmentDate LIKE ?
+                WHERE c.userId = ? AND a.appointmentDate = ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
-                  AND (? IS NULL OR a.id != ?)
+                  AND (CAST(? AS BIGINT) IS NULL OR a.id <> ?)
                 """,
                 (rs, rowNum) -> new TimeSlot(rs.getString("appointmentTime"), readDuration(rs)),
                 userId,
-                appointmentDate + "%",
+                appointmentDate,
                 excludeId,
                 excludeId
         );
@@ -377,13 +391,13 @@ public class AppointmentService {
                 INNER JOIN clients c ON a.clientId = c.id
                 INNER JOIN clinic_rooms r ON r.id = a.roomId
                 INNER JOIN clinic_members m ON m.clinicId = r.clinicId AND m.userId = c.userId
-                WHERE a.roomId = ? AND a.appointmentDate LIKE ?
+                WHERE a.roomId = ? AND a.appointmentDate = ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
-                  AND (? IS NULL OR a.id != ?)
+                  AND (CAST(? AS BIGINT) IS NULL OR a.id <> ?)
                 """,
                 (rs, rowNum) -> new TimeSlot(rs.getString("appointmentTime"), readDuration(rs)),
                 roomId,
-                appointmentDate + "%",
+                appointmentDate,
                 excludeId,
                 excludeId
         );

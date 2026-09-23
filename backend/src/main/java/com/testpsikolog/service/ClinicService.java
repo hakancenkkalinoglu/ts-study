@@ -73,40 +73,42 @@ public class ClinicService {
         return rooms.get(0);
     }
 
+    @Transactional
     public ClinicResponse create(long userId, CreateClinicRequest request) {
         if (clinicIdForUser(userId) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Zaten bir kliniğe bağlısınız.");
         }
         String name = requireName(request == null ? null : request.name(), "Klinik adı gerekli.");
         String code = newInviteCode();
-        jdbc.update(
-                "INSERT INTO clinics (name, inviteCode, ownerUserId, createdAt) VALUES (?, ?, ?, datetime('now'))",
+        Long clinicId = jdbc.queryForObject(
+                "INSERT INTO clinics (name, inviteCode, ownerUserId, createdAt) VALUES (?, ?, ?, utc_now_text()) RETURNING id",
+                Long.class,
                 name,
                 code,
                 userId
         );
-        Long clinicId = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         if (clinicId == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Klinik oluşturulamadı.");
         }
         jdbc.update(
-                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'owner', datetime('now'))",
+                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'owner', utc_now_text())",
                 clinicId,
                 userId
         );
         jdbc.update(
-                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, 'Oda 1', ?, datetime('now'))",
+                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, 'Oda 1', ?, utc_now_text())",
                 clinicId,
                 DEFAULT_ROOM_COLORS[0]
         );
         jdbc.update(
-                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, 'Online', ?, datetime('now'))",
+                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, 'Online', ?, utc_now_text())",
                 clinicId,
                 DEFAULT_ROOM_COLORS[1]
         );
         return loadClinic(clinicId, userId);
     }
 
+    @Transactional
     public ClinicResponse join(long userId, JoinClinicRequest request) {
         if (clinicIdForUser(userId) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Zaten bir kliniğe bağlısınız.");
@@ -124,7 +126,7 @@ public class ClinicService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Davet kodu bulunamadı.");
         }
         jdbc.update(
-                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'member', datetime('now'))",
+                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'member', utc_now_text())",
                 clinicId,
                 userId
         );
@@ -148,9 +150,9 @@ public class ClinicService {
         jdbc.update(
                 """
                 UPDATE appointments
-                SET roomId = NULL, clinicId = NULL, updatedAt = datetime('now')
+                SET roomId = NULL, clinicId = NULL, updatedAt = utc_now_text()
                 WHERE roomId IN (SELECT id FROM clinic_rooms WHERE clinicId = ?)
-                  AND appointmentDate >= date('now', 'localtime')
+                  AND appointmentDate >= to_char(now() AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD')
                   AND clientId IN (SELECT id FROM clients WHERE userId = ?)
                 """,
                 clinicId,
@@ -158,6 +160,7 @@ public class ClinicService {
         );
     }
 
+    @Transactional
     public void deleteClinic(long userId) {
         ClinicResponse clinic = getMine(userId);
         if (clinic == null) {
@@ -177,13 +180,13 @@ public class ClinicService {
         Long clinicId = requireClinicId(userId);
         String name = requireName(request == null ? null : request.name(), "Oda adı gerekli.");
         String color = normalizeColor(request == null ? null : request.color(), nextRoomColor(clinicId));
-        jdbc.update(
-                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, ?, ?, datetime('now'))",
+        Long id = jdbc.queryForObject(
+                "INSERT INTO clinic_rooms (clinicId, name, color, createdAt) VALUES (?, ?, ?, utc_now_text()) RETURNING id",
+                Long.class,
                 clinicId,
                 name,
                 color
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return new ClinicRoomResponse(id == null ? 0L : id, name, color);
     }
 
@@ -208,6 +211,7 @@ public class ClinicService {
         return requireOwnedRoom(userId, roomId);
     }
 
+    @Transactional
     public void deleteRoom(long userId, long roomId) {
         requireOwner(userId);
         requireOwnedRoom(userId, roomId);
@@ -259,6 +263,7 @@ public class ClinicService {
         return loadClinic(clinic.id(), userId);
     }
 
+    @Transactional
     public ClinicResponse transferOwnership(long userId, TransferOwnerRequest request) {
         ClinicResponse clinic = requireOwner(userId);
         Long nextOwnerId = request == null ? null : request.userId();

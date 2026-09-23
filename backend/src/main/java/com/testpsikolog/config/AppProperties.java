@@ -12,6 +12,8 @@ public class AppProperties {
     private boolean seedEnabled = false;
     private String seedUsername = "";
     private String seedPassword = "";
+    private boolean mockDataEnabled = false;
+    private String mockPassword = "";
     private final Google google = new Google();
 
     public String getJwtSecret() {
@@ -68,6 +70,22 @@ public class AppProperties {
 
     public void setSeedPassword(String seedPassword) {
         this.seedPassword = seedPassword;
+    }
+
+    public boolean isMockDataEnabled() {
+        return mockDataEnabled;
+    }
+
+    public void setMockDataEnabled(boolean mockDataEnabled) {
+        this.mockDataEnabled = mockDataEnabled;
+    }
+
+    public String getMockPassword() {
+        return mockPassword;
+    }
+
+    public void setMockPassword(String mockPassword) {
+        this.mockPassword = mockPassword;
     }
 
     public Google getGoogle() {

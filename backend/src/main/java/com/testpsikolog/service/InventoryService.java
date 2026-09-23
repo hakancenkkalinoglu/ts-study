@@ -102,18 +102,19 @@ public class InventoryService {
             encoded.append(value);
         }
         String interpretation = interpret(inventory.code(), score);
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO client_inventory_results (clientId, inventoryId, answers, score, interpretation, createdAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 clientId,
                 inventoryId,
                 encoded.toString(),
                 score,
                 interpretation
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return new InventoryResultResponse(
                 id == null ? 0L : id,
                 inventoryId,
@@ -188,14 +189,14 @@ public class InventoryService {
     }
 
     private void insertInventory(String code, String name, String description, int maxScore, List<String> prompts) {
-        jdbc.update(
-                "INSERT INTO psych_inventories (code, name, description, maxScore) VALUES (?, ?, ?, ?)",
+        Long id = jdbc.queryForObject(
+                "INSERT INTO psych_inventories (code, name, description, maxScore) VALUES (?, ?, ?, ?) RETURNING id",
+                Long.class,
                 code,
                 name,
                 description,
                 maxScore
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         if (id == null) {
             return;
         }

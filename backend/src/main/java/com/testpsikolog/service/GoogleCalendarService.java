@@ -319,11 +319,14 @@ public class GoogleCalendarService {
         Long expiry = tokenResponse.getExpiresInSeconds() == null
                 ? null
                 : Instant.now().toEpochMilli() + tokenResponse.getExpiresInSeconds() * 1000;
-        jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
         jdbc.update(
                 """
                 INSERT INTO google_tokens (userId, accessToken, refreshToken, expiryDate)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(userId) DO UPDATE SET
+                  accessToken = excluded.accessToken,
+                  refreshToken = excluded.refreshToken,
+                  expiryDate = excluded.expiryDate
                 """,
                 userId,
                 tokenResponse.getAccessToken(),

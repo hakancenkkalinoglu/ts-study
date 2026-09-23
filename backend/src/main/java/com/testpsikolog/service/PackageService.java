@@ -49,18 +49,19 @@ public class PackageService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Paket 1 ile 100 seans arasında olmalı.");
         }
         int prepaid = request == null || request.prepaidAmount() == null ? 0 : Math.max(0, request.prepaidAmount());
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO session_packages (clientId, title, totalSessions, remainingSessions, prepaidAmount, createdAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 clientId,
                 title,
                 total,
                 total,
                 prepaid
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return getOwned(userId, clientId, id == null ? 0L : id);
     }
 

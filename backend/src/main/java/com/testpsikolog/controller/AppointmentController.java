@@ -62,9 +62,13 @@ public class AppointmentController {
     }
 
     @GetMapping("/appointments")
-    public List<AppointmentResponse> getAllAppointments(@RequestParam(value = "scope", required = false) String scope) {
+    public List<AppointmentResponse> getAllAppointments(
+            @RequestParam(value = "scope", required = false) String scope,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to
+    ) {
         long userId = currentUserService.requireUser().id();
-        return appointmentService.getAll(userId, scope);
+        return appointmentService.getAll(userId, scope, from, to);
     }
 
     @GetMapping("/appointments/{id}")

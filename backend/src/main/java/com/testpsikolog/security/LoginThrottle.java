@@ -15,6 +15,7 @@ public class LoginThrottle {
     private static final int MAX_FAILURES = 5;
     private static final Duration FAILURE_WINDOW = Duration.ofMinutes(15);
     private static final Duration LOCK_DURATION = Duration.ofMinutes(15);
+    private static final int MAX_TRACKED_KEYS = 10_000;
 
     private final Map<String, Attempt> attempts = new ConcurrentHashMap<>();
 
@@ -37,6 +38,9 @@ public class LoginThrottle {
 
     public void recordFailure(String key) {
         Instant now = Instant.now();
+        if (attempts.size() > MAX_TRACKED_KEYS) {
+            attempts.entrySet().removeIf(entry -> isExpired(entry.getValue(), now));
+        }
         attempts.compute(normalize(key), (ignored, current) -> {
             boolean restart = current == null
                     || current.lockedUntil() != null
@@ -50,6 +54,13 @@ public class LoginThrottle {
 
     public void reset(String key) {
         attempts.remove(normalize(key));
+    }
+
+    private static boolean isExpired(Attempt attempt, Instant now) {
+        if (attempt.lockedUntil() != null) {
+            return attempt.lockedUntil().isBefore(now);
+        }
+        return attempt.windowStart().plus(FAILURE_WINDOW).isBefore(now);
     }
 
     private static String normalize(String key) {

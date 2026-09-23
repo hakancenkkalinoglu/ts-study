@@ -58,18 +58,19 @@ public class NoteService {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Randevu bulunamadı.");
             }
         }
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO client_notes (clientId, appointmentId, title, content, noteDate, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                VALUES (?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 note.clientId(),
                 note.appointmentId(),
                 note.title(),
                 note.content().trim(),
                 note.noteDate()
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return id == null ? 0L : id;
     }
 
@@ -108,7 +109,7 @@ public class NoteService {
                   title = COALESCE(?, title),
                   content = COALESCE(?, content),
                   noteDate = COALESCE(?, noteDate),
-                  updatedAt = datetime('now')
+                  updatedAt = utc_now_text()
                 WHERE id = ? AND clientId = ?
                 """,
                 data.title(),
@@ -152,7 +153,7 @@ public class NoteService {
             jdbc.update(
                     """
                     UPDATE client_notes
-                    SET filePath = ?, fileName = ?, updatedAt = datetime('now')
+                    SET filePath = ?, fileName = ?, updatedAt = utc_now_text()
                     WHERE id = ? AND clientId = ?
                     """,
                     target.toString(),
@@ -202,7 +203,7 @@ public class NoteService {
         requireOwnedNote(userId, clientId, noteId);
         deleteStoredFile(userId, noteId);
         jdbc.update(
-                "UPDATE client_notes SET filePath = NULL, fileName = NULL, updatedAt = datetime('now') WHERE id = ? AND clientId = ?",
+                "UPDATE client_notes SET filePath = NULL, fileName = NULL, updatedAt = utc_now_text() WHERE id = ? AND clientId = ?",
                 noteId,
                 clientId
         );

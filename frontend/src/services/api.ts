@@ -285,8 +285,11 @@ export const getAppointmentNotes = async (
   return response.data;
 };
 
-export const getAllAppointments = async (scope?: 'mine' | 'clinic'): Promise<AppointmentWithClient[]> => {
-  const params = scope ? { scope } : {};
+export const getAllAppointments = async (
+  scope?: 'mine' | 'clinic',
+  range?: { from: string; to: string }
+): Promise<AppointmentWithClient[]> => {
+  const params = { ...(scope ? { scope } : {}), ...(range ?? {}) };
   const response = await api.get<AppointmentWithClient[]>('/appointments', { params });
   return response.data;
 };

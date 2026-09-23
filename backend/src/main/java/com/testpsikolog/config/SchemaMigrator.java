@@ -1,7 +1,6 @@
 package com.testpsikolog.config;
 
 import java.util.List;
-import java.util.Map;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
@@ -20,209 +19,65 @@ public class SchemaMigrator implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        createCoreTables();
-
-        if (!hasColumn("clients", "userId")) {
-            jdbc.execute("ALTER TABLE clients ADD COLUMN userId INTEGER");
-        }
-        Long firstUserId = jdbc.query(
-                "SELECT id FROM app_users ORDER BY id ASC LIMIT 1",
-                rs -> rs.next() ? rs.getLong("id") : null
-        );
-        if (firstUserId != null) {
-            jdbc.update("UPDATE clients SET userId = ? WHERE userId IS NULL", firstUserId);
-        }
-
-        if (!hasColumn("app_users", "email")) {
-            jdbc.execute("ALTER TABLE app_users ADD COLUMN email TEXT");
-        }
-        jdbc.update(
-                """
-                UPDATE app_users
-                SET email = username
-                WHERE email IS NULL AND username LIKE '%@%'
-                """
-        );
-
-        if (!hasColumn("appointments", "status")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN status TEXT");
-        }
-        jdbc.update("UPDATE appointments SET status = 'scheduled' WHERE status IS NULL OR status = ''");
-
-        if (!hasColumn("clients", "phone")) {
-            jdbc.execute("ALTER TABLE clients ADD COLUMN phone TEXT");
-        }
-        if (!hasColumn("clients", "emergencyName")) {
-            jdbc.execute("ALTER TABLE clients ADD COLUMN emergencyName TEXT");
-        }
-        if (!hasColumn("clients", "emergencyPhone")) {
-            jdbc.execute("ALTER TABLE clients ADD COLUMN emergencyPhone TEXT");
-        }
-
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS clinics (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  name TEXT NOT NULL,
-                  inviteCode TEXT NOT NULL UNIQUE,
-                  ownerUserId INTEGER NOT NULL,
-                  createdAt TEXT NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS clinic_members (
-                  clinicId INTEGER NOT NULL,
-                  userId INTEGER NOT NULL,
-                  role TEXT NOT NULL,
-                  createdAt TEXT NOT NULL,
-                  PRIMARY KEY (clinicId, userId)
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS clinic_rooms (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  clinicId INTEGER NOT NULL,
-                  name TEXT NOT NULL,
-                  color TEXT,
-                  createdAt TEXT NOT NULL
-                )
-                """
-        );
-        if (!hasColumn("appointments", "clinicId")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN clinicId INTEGER");
-        }
-        if (!hasColumn("appointments", "roomId")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN roomId INTEGER");
-        }
-        if (!hasColumn("appointments", "durationMinutes")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN durationMinutes INTEGER");
-        }
-        jdbc.update("UPDATE appointments SET durationMinutes = 50 WHERE durationMinutes IS NULL");
-        if (!hasColumn("appointments", "seriesId")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN seriesId TEXT");
-        }
-
-        if (!hasColumn("app_users", "displayName")) {
-            jdbc.execute("ALTER TABLE app_users ADD COLUMN displayName TEXT");
-        }
-        if (!hasColumn("app_users", "reminderHours")) {
-            jdbc.execute("ALTER TABLE app_users ADD COLUMN reminderHours INTEGER");
-        }
-        jdbc.update("UPDATE app_users SET reminderHours = 24 WHERE reminderHours IS NULL");
-        if (!hasColumn("app_users", "tokenVersion")) {
-            jdbc.execute("ALTER TABLE app_users ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0");
-        }
-        if (!hasColumn("appointments", "sessionFee")) {
-            jdbc.execute("ALTER TABLE appointments ADD COLUMN sessionFee INTEGER");
-        }
-        if (!hasColumn("client_notes", "fileName")) {
-            jdbc.execute("ALTER TABLE client_notes ADD COLUMN fileName TEXT");
-        }
-
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                  email TEXT NOT NULL,
-                  codeHash TEXT NOT NULL,
-                  expiresAt INTEGER NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS session_packages (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  clientId INTEGER NOT NULL,
-                  title TEXT NOT NULL,
-                  totalSessions INTEGER NOT NULL,
-                  remainingSessions INTEGER NOT NULL,
-                  prepaidAmount INTEGER NOT NULL DEFAULT 0,
-                  createdAt TEXT NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS psych_inventories (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  code TEXT NOT NULL UNIQUE,
-                  name TEXT NOT NULL,
-                  description TEXT,
-                  maxScore INTEGER NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS psych_inventory_items (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  inventoryId INTEGER NOT NULL,
-                  sortOrder INTEGER NOT NULL,
-                  prompt TEXT NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS client_inventory_results (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  clientId INTEGER NOT NULL,
-                  inventoryId INTEGER NOT NULL,
-                  answers TEXT NOT NULL,
-                  score INTEGER NOT NULL,
-                  interpretation TEXT NOT NULL,
-                  createdAt TEXT NOT NULL
-                )
-                """
-        );
-        jdbc.execute(
-                """
-                CREATE TABLE IF NOT EXISTS blocked_slots (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  userId INTEGER NOT NULL,
-                  slotDate TEXT NOT NULL,
-                  startTime TEXT NOT NULL,
-                  endTime TEXT NOT NULL,
-                  title TEXT,
-                  createdAt TEXT NOT NULL
-                )
-                """
-        );
-        jdbc.update(
-                """
-                UPDATE client_notes SET appointmentId = NULL
-                WHERE appointmentId IS NOT NULL AND appointmentId NOT IN (SELECT id FROM appointments)
-                """
-        );
+        createFunctions();
+        createTables();
+        createIndexes();
+        createOverlapConstraints();
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
         jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", System.currentTimeMillis());
     }
 
-    private void createCoreTables() {
+    private void createFunctions() {
+        jdbc.execute(
+                """
+                CREATE OR REPLACE FUNCTION utc_now_text() RETURNS text
+                LANGUAGE sql STABLE
+                AS $$ SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') $$
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE OR REPLACE FUNCTION slot_timestamp(slot_date text, slot_time text) RETURNS timestamp
+                LANGUAGE sql IMMUTABLE
+                AS $$
+                  SELECT make_timestamp(
+                    substr(slot_date, 1, 4)::int,
+                    substr(slot_date, 6, 2)::int,
+                    substr(slot_date, 9, 2)::int,
+                    substr(slot_time, 1, 2)::int,
+                    substr(slot_time, 4, 2)::int,
+                    0
+                  )
+                $$
+                """
+        );
+    }
+
+    private void createTables() {
         jdbc.execute(
                 """
                 CREATE TABLE IF NOT EXISTS app_users (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
                   username TEXT NOT NULL,
                   email TEXT,
-                  passwordHash TEXT NOT NULL
+                  passwordHash TEXT NOT NULL,
+                  displayName TEXT,
+                  reminderHours INTEGER DEFAULT 24,
+                  tokenVersion INTEGER NOT NULL DEFAULT 0,
+                  createdAt TEXT DEFAULT utc_now_text()
                 )
                 """
         );
         jdbc.execute(
                 """
                 CREATE TABLE IF NOT EXISTS clients (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
                   email TEXT,
                   name TEXT,
                   birthDate TEXT,
                   agreedFee INTEGER,
                   password TEXT,
-                  userId INTEGER,
+                  userId BIGINT,
                   phone TEXT,
                   emergencyName TEXT,
                   emergencyPhone TEXT,
@@ -234,8 +89,9 @@ public class SchemaMigrator implements ApplicationRunner {
         jdbc.execute(
                 """
                 CREATE TABLE IF NOT EXISTS appointments (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  clientId INTEGER NOT NULL,
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  clientId BIGINT NOT NULL,
+                  userId BIGINT,
                   appointmentDate TEXT NOT NULL,
                   appointmentTime TEXT,
                   title TEXT,
@@ -244,24 +100,33 @@ public class SchemaMigrator implements ApplicationRunner {
                   googleEventId TEXT,
                   googleMeetLink TEXT,
                   googleHtmlLink TEXT,
-                  clinicId INTEGER,
-                  roomId INTEGER,
+                  clinicId BIGINT,
+                  roomId BIGINT,
                   durationMinutes INTEGER NOT NULL DEFAULT 50,
                   seriesId TEXT,
+                  sessionFee INTEGER,
                   createdAt TEXT NOT NULL,
-                  updatedAt TEXT NOT NULL
+                  updatedAt TEXT NOT NULL,
+                  slot TSRANGE GENERATED ALWAYS AS (
+                    tsrange(
+                      slot_timestamp(appointmentDate, COALESCE(appointmentTime, '09:00')),
+                      slot_timestamp(appointmentDate, COALESCE(appointmentTime, '09:00'))
+                        + make_interval(mins => durationMinutes)
+                    )
+                  ) STORED
                 )
                 """
         );
         jdbc.execute(
                 """
                 CREATE TABLE IF NOT EXISTS client_notes (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  clientId INTEGER NOT NULL,
-                  appointmentId INTEGER,
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  clientId BIGINT NOT NULL,
+                  appointmentId BIGINT,
                   title TEXT,
                   content TEXT,
                   filePath TEXT,
+                  fileName TEXT,
                   noteDate TEXT,
                   createdAt TEXT NOT NULL,
                   updatedAt TEXT NOT NULL
@@ -271,10 +136,10 @@ public class SchemaMigrator implements ApplicationRunner {
         jdbc.execute(
                 """
                 CREATE TABLE IF NOT EXISTS google_tokens (
-                  userId INTEGER PRIMARY KEY,
+                  userId BIGINT PRIMARY KEY,
                   accessToken TEXT NOT NULL,
                   refreshToken TEXT,
-                  expiryDate INTEGER
+                  expiryDate BIGINT
                 )
                 """
         );
@@ -283,20 +148,193 @@ public class SchemaMigrator implements ApplicationRunner {
                 CREATE TABLE IF NOT EXISTS auth_exchange_codes (
                   code TEXT PRIMARY KEY,
                   token TEXT NOT NULL,
-                  expiresAt INTEGER NOT NULL
+                  expiresAt BIGINT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinics (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  inviteCode TEXT NOT NULL UNIQUE,
+                  ownerUserId BIGINT NOT NULL,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinic_members (
+                  clinicId BIGINT NOT NULL,
+                  userId BIGINT NOT NULL,
+                  role TEXT NOT NULL,
+                  createdAt TEXT NOT NULL,
+                  PRIMARY KEY (clinicId, userId)
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clinic_rooms (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  clinicId BIGINT NOT NULL,
+                  name TEXT NOT NULL,
+                  color TEXT,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                  email TEXT NOT NULL,
+                  codeHash TEXT NOT NULL,
+                  expiresAt BIGINT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_packages (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  clientId BIGINT NOT NULL,
+                  title TEXT NOT NULL,
+                  totalSessions INTEGER NOT NULL,
+                  remainingSessions INTEGER NOT NULL,
+                  prepaidAmount INTEGER NOT NULL DEFAULT 0,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS psych_inventories (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  code TEXT NOT NULL UNIQUE,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  maxScore INTEGER NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS psych_inventory_items (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  inventoryId BIGINT NOT NULL,
+                  sortOrder INTEGER NOT NULL,
+                  prompt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS client_inventory_results (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  clientId BIGINT NOT NULL,
+                  inventoryId BIGINT NOT NULL,
+                  answers TEXT NOT NULL,
+                  score INTEGER NOT NULL,
+                  interpretation TEXT NOT NULL,
+                  createdAt TEXT NOT NULL
+                )
+                """
+        );
+        jdbc.execute(
+                """
+                CREATE TABLE IF NOT EXISTS blocked_slots (
+                  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                  userId BIGINT NOT NULL,
+                  slotDate TEXT NOT NULL,
+                  startTime TEXT NOT NULL,
+                  endTime TEXT NOT NULL,
+                  title TEXT,
+                  createdAt TEXT NOT NULL,
+                  slot TSRANGE GENERATED ALWAYS AS (
+                    tsrange(slot_timestamp(slotDate, startTime), slot_timestamp(slotDate, endTime))
+                  ) STORED
                 )
                 """
         );
     }
 
-    private boolean hasColumn(String table, String column) {
-        List<Map<String, Object>> cols = jdbc.queryForList("PRAGMA table_info(" + table + ")");
-        return cols.stream().anyMatch(row -> {
-            Object name = row.get("name");
-            if (name == null) {
-                name = row.get("NAME");
-            }
-            return column.equalsIgnoreCase(String.valueOf(name));
-        });
+    private void createIndexes() {
+        List<String> indexes = List.of(
+                "CREATE INDEX IF NOT EXISTS ix_app_users_email ON app_users(email)",
+                "CREATE INDEX IF NOT EXISTS ix_app_users_username ON app_users(username)",
+                "CREATE INDEX IF NOT EXISTS ix_clients_user ON clients(userId)",
+                "CREATE INDEX IF NOT EXISTS ix_appointments_client_date ON appointments(clientId, appointmentDate)",
+                "CREATE INDEX IF NOT EXISTS ix_appointments_room_date ON appointments(roomId, appointmentDate)",
+                "CREATE INDEX IF NOT EXISTS ix_appointments_date ON appointments(appointmentDate)",
+                "CREATE INDEX IF NOT EXISTS ix_client_notes_client ON client_notes(clientId)",
+                "CREATE INDEX IF NOT EXISTS ix_client_notes_appointment ON client_notes(appointmentId)",
+                "CREATE INDEX IF NOT EXISTS ix_blocked_slots_user_date ON blocked_slots(userId, slotDate)",
+                "CREATE INDEX IF NOT EXISTS ix_session_packages_client ON session_packages(clientId)",
+                "CREATE INDEX IF NOT EXISTS ix_inventory_results_client ON client_inventory_results(clientId)",
+                "CREATE INDEX IF NOT EXISTS ix_clinic_rooms_clinic ON clinic_rooms(clinicId)",
+                "CREATE INDEX IF NOT EXISTS ix_password_reset_email ON password_reset_tokens(email)"
+        );
+        for (String sql : indexes) {
+            jdbc.execute(sql);
+        }
+        createUniqueIndex(
+                "ux_app_users_email",
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_app_users_email ON app_users(lower(email)) WHERE email IS NOT NULL"
+        );
+        createUniqueIndex(
+                "ux_clinic_members_user",
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_clinic_members_user ON clinic_members(userId)"
+        );
+        createUniqueIndex(
+                "ux_clients_user_email",
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_clients_user_email ON clients(userId, lower(email)) WHERE email IS NOT NULL"
+        );
+    }
+
+    private void createUniqueIndex(String name, String sql) {
+        try {
+            jdbc.execute(sql);
+        } catch (Exception ex) {
+            System.out.println("Unique index " + name + " could not be created; existing rows contain duplicates: " + ex.getMessage());
+        }
+    }
+
+    private void createOverlapConstraints() {
+        jdbc.execute("CREATE EXTENSION IF NOT EXISTS btree_gist");
+        addConstraintIfMissing(
+                "ex_appointments_therapist_slot",
+                """
+                ALTER TABLE appointments ADD CONSTRAINT ex_appointments_therapist_slot
+                EXCLUDE USING gist (userId WITH =, slot WITH &&)
+                WHERE (COALESCE(status, 'scheduled') <> 'cancelled')
+                """
+        );
+        addConstraintIfMissing(
+                "ex_appointments_room_slot",
+                """
+                ALTER TABLE appointments ADD CONSTRAINT ex_appointments_room_slot
+                EXCLUDE USING gist (roomId WITH =, slot WITH &&)
+                WHERE (COALESCE(status, 'scheduled') <> 'cancelled')
+                """
+        );
+        addConstraintIfMissing(
+                "ex_blocked_slots_user_slot",
+                """
+                ALTER TABLE blocked_slots ADD CONSTRAINT ex_blocked_slots_user_slot
+                EXCLUDE USING gist (userId WITH =, slot WITH &&)
+                """
+        );
+    }
+
+    private void addConstraintIfMissing(String name, String sql) {
+        Integer exists = jdbc.query(
+                "SELECT 1 FROM pg_constraint WHERE conname = ?",
+                rs -> rs.next() ? 1 : null,
+                name
+        );
+        if (exists == null) {
+            jdbc.execute(sql);
+        }
     }
 }

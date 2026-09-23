@@ -46,7 +46,7 @@ public class ClientService {
             String pattern = "%" + search.trim() + "%";
             return jdbc.query(
                     "SELECT " + CLIENT_COLUMNS
-                            + " FROM clients WHERE userId = ? AND (name LIKE ? OR email LIKE ? OR phone LIKE ? OR emergencyPhone LIKE ? OR emergencyName LIKE ?) ORDER BY name ASC",
+                            + " FROM clients WHERE userId = ? AND (name ILIKE ? OR email ILIKE ? OR phone ILIKE ? OR emergencyPhone ILIKE ? OR emergencyName ILIKE ?) ORDER BY name ASC",
                     CLIENT_MAPPER,
                     userId,
                     pattern,
@@ -83,11 +83,13 @@ public class ClientService {
         }
         Integer requestedFee = ScheduleInputs.requireNonNegativeFee(request.agreedFee());
         int agreedFee = requestedFee == null ? 2000 : requestedFee;
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 email,
                 name,
                 blankToNull(request.birthDate()),
@@ -98,7 +100,6 @@ public class ClientService {
                 blankToNull(request.emergencyName()),
                 blankToNull(request.emergencyPhone())
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return id == null ? 0L : id;
     }
 
@@ -124,12 +125,12 @@ public class ClientService {
                   email = CASE WHEN ? = 1 THEN ? ELSE email END,
                   name = COALESCE(?, name),
                   birthDate = CASE WHEN ? = 1 THEN ? ELSE birthDate END,
-                  agreedFee = CASE WHEN ? IS NOT NULL THEN ? ELSE agreedFee END,
+                  agreedFee = CASE WHEN CAST(? AS INTEGER) IS NOT NULL THEN ? ELSE agreedFee END,
                   password = COALESCE(?, password),
                   phone = COALESCE(?, phone),
                   emergencyName = COALESCE(?, emergencyName),
                   emergencyPhone = COALESCE(?, emergencyPhone),
-                  updatedAt = datetime('now')
+                  updatedAt = utc_now_text()
                 WHERE id = ? AND userId = ?
                 """,
                 emailProvided ? 1 : 0,

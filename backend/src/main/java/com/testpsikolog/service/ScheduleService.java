@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -47,6 +48,7 @@ public class ScheduleService {
         );
     }
 
+    @Transactional
     public BlockedSlotResponse create(long userId, CreateBlockedSlotRequest request) {
         String date = ScheduleInputs.requireDate(request.slotDate());
         String startTime = ScheduleInputs.requireTime(request.startTime());
@@ -62,28 +64,34 @@ public class ScheduleService {
         if (end > 24 * 60) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aralık gece yarısını geçemez.");
         }
+        lockTherapistSchedule(userId);
         if (overlaps(loadBlockedSlots(userId, date), start, end)
                 || overlaps(loadAppointmentSlots(userId, date), start, end)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat aralığı dolu veya kapalı.");
         }
         String title = request.title() == null || request.title().isBlank() ? "Kapalı" : request.title().trim();
-        jdbc.update(
+        Long id = jdbc.queryForObject(
                 """
                 INSERT INTO blocked_slots (userId, slotDate, startTime, endTime, title, createdAt)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, utc_now_text())
+                RETURNING id
                 """,
+                Long.class,
                 userId,
                 date,
                 startTime,
                 endTime,
                 title
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         return new BlockedSlotResponse(id == null ? 0L : id, date, startTime, endTime, title);
     }
 
     public int delete(long userId, long slotId) {
         return jdbc.update("DELETE FROM blocked_slots WHERE id = ? AND userId = ?", slotId, userId);
+    }
+
+    public void lockTherapistSchedule(long userId) {
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", rs -> null, userId);
     }
 
     public boolean overlapsBlocked(long userId, String appointmentDate, String appointmentTime, int durationMinutes) {
@@ -119,7 +127,7 @@ public class ScheduleService {
                 SELECT a.appointmentTime, a.durationMinutes
                 FROM appointments a
                 INNER JOIN clients c ON a.clientId = c.id
-                WHERE c.userId = ? AND a.appointmentDate LIKE ?
+                WHERE c.userId = ? AND a.appointmentDate = ?
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
                 """,
                 (rs, rowNum) -> {
@@ -127,7 +135,7 @@ public class ScheduleService {
                     return new TimeSlot(toMinutes(rs.getString("appointmentTime")), duration);
                 },
                 userId,
-                appointmentDate + "%"
+                appointmentDate
         );
     }
 

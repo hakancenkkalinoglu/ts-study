@@ -271,7 +271,7 @@ export const Calendar = () => {
     try {
       setLoading(true);
       const [data, blocked] = await Promise.all([
-        getAllAppointments(calendarScope),
+        getAllAppointments(calendarScope, range),
         getBlockedSlots(range.from, range.to).catch(() => [] as BlockedSlot[]),
       ]);
       setAppointments(data);

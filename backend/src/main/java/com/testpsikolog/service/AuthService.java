@@ -6,6 +6,7 @@ import com.testpsikolog.dto.LoginResponse;
 import com.testpsikolog.security.AuthUser;
 import com.testpsikolog.security.JwtService;
 import com.testpsikolog.security.LoginThrottle;
+import com.testpsikolog.util.DbErrors;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -96,18 +98,31 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Görünen ad en fazla 80 karakter olabilir.");
         }
         String hash = passwordEncoder.encode(request.password());
-        jdbc.update(
-                "INSERT INTO app_users (username, email, passwordHash, displayName, reminderHours) VALUES (?, ?, ?, ?, 24)",
+        Long id;
+        try {
+            id = insertUser(email, hash, displayName);
+        } catch (DataAccessException ex) {
+            if (DbErrors.isUniqueViolation(ex)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu e-posta ile kayıtlı bir hesap var.");
+            }
+            throw ex;
+        }
+        return toResponse(new AuthUser(id, email, email));
+    }
+
+    private Long insertUser(String email, String passwordHash, String displayName) {
+        Long id = jdbc.queryForObject(
+                "INSERT INTO app_users (username, email, passwordHash, displayName, reminderHours) VALUES (?, ?, ?, ?, 24) RETURNING id",
+                Long.class,
                 email,
                 email,
-                hash,
+                passwordHash,
                 displayName
         );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
         if (id == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kayıt oluşturulamadı.");
         }
-        return toResponse(new AuthUser(id, email, email));
+        return id;
     }
 
     public LoginResponse loginOrRegisterFromGoogle(String googleEmail) {
@@ -120,18 +135,16 @@ public class AuthService {
             return toResponse(existing);
         }
         String hash = passwordEncoder.encode(UUID.randomUUID().toString());
-        jdbc.update(
-                "INSERT INTO app_users (username, email, passwordHash, displayName, reminderHours) VALUES (?, ?, ?, ?, 24)",
-                email,
-                email,
-                hash,
-                email
-        );
-        Long id = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
-        if (id == null) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kayıt oluşturulamadı.");
+        try {
+            Long id = insertUser(email, hash, email);
+            return toResponse(new AuthUser(id, email, email));
+        } catch (DataAccessException ex) {
+            AuthUser created = DbErrors.isUniqueViolation(ex) ? findByLogin(email) : null;
+            if (created == null || created.id() == null) {
+                throw ex;
+            }
+            return toResponse(created);
         }
-        return toResponse(new AuthUser(id, email, email));
     }
 
     public String requireEmail(long userId) {
@@ -151,14 +164,25 @@ public class AuthService {
 
     public AuthUser authenticate(String token) {
         AuthUser parsed = jwtService.parse(token);
-        AuthUser user = parsed.id() != null ? findById(parsed.id()) : findByLogin(parsed.username());
-        if (user == null || user.id() == null) {
+        String lookup = parsed.id() != null
+                ? "SELECT id, username, email, tokenVersion FROM app_users WHERE id = ?"
+                : "SELECT id, username, email, tokenVersion FROM app_users WHERE email = ? OR username = ? LIMIT 1";
+        Object[] args = parsed.id() != null ? new Object[] {parsed.id()} : new Object[] {parsed.username(), parsed.username()};
+        TokenOwner owner = jdbc.query(
+                lookup,
+                rs -> rs.next() ? new TokenOwner(mapUser(rs), rs.getInt("tokenVersion")) : null,
+                args
+        );
+        if (owner == null) {
             throw new IllegalArgumentException("Token gecersiz.");
         }
-        if (jwtService.tokenVersion(token) != currentTokenVersion(user.id())) {
+        if (jwtService.tokenVersion(token) != owner.tokenVersion()) {
             throw new IllegalArgumentException("Token revoked.");
         }
-        return user;
+        return owner.user();
+    }
+
+    private record TokenOwner(AuthUser user, int tokenVersion) {
     }
 
     public AuthUser findByLogin(String loginId) {
@@ -405,13 +429,24 @@ public class AuthService {
     public java.util.Map<String, Object> exportAccount(long userId) {
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("profile", getProfile(userId, false));
-        payload.put("clients", jdbc.queryForList("SELECT id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt FROM clients WHERE userId = ?", userId));
+        payload.put(
+                "clients",
+                jdbc.queryForList(
+                        """
+                        SELECT id, email, name, birthDate AS "birthDate", agreedFee AS "agreedFee", phone,
+                               emergencyName AS "emergencyName", emergencyPhone AS "emergencyPhone", createdAt AS "createdAt"
+                        FROM clients WHERE userId = ?
+                        """,
+                        userId
+                )
+        );
         payload.put(
                 "appointments",
                 jdbc.queryForList(
                         """
-                        SELECT a.id, a.clientId, a.appointmentDate, a.appointmentTime, a.title, a.isPaid, a.status,
-                               a.durationMinutes, a.sessionFee, a.createdAt
+                        SELECT a.id, a.clientId AS "clientId", a.appointmentDate AS "appointmentDate",
+                               a.appointmentTime AS "appointmentTime", a.title, a.isPaid AS "isPaid", a.status,
+                               a.durationMinutes AS "durationMinutes", a.sessionFee AS "sessionFee", a.createdAt AS "createdAt"
                         FROM appointments a
                         INNER JOIN clients c ON c.id = a.clientId
                         WHERE c.userId = ?
@@ -423,7 +458,8 @@ public class AuthService {
                 "notes",
                 jdbc.queryForList(
                         """
-                        SELECT n.id, n.clientId, n.appointmentId, n.title, n.content, n.fileName, n.noteDate, n.createdAt
+                        SELECT n.id, n.clientId AS "clientId", n.appointmentId AS "appointmentId", n.title, n.content,
+                               n.fileName AS "fileName", n.noteDate AS "noteDate", n.createdAt AS "createdAt"
                         FROM client_notes n
                         INNER JOIN clients c ON c.id = n.clientId
                         WHERE c.userId = ?
