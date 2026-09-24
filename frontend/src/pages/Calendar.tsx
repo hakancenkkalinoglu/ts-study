@@ -18,19 +18,18 @@ import {
 import { tr } from 'date-fns/locale';
 import {
   apiErrorMessage,
-  createBlockedSlot,
-  deleteBlockedSlot,
   getAllAppointments,
   getBlockedSlots,
   getMyClinic,
   updateAppointment,
+  updateBlockedSlot,
 } from '../services/api';
 import type { AppointmentWithClient, BlockedSlot, Clinic } from '../types';
 import { AddAppointmentModal } from '../components/AddAppointmentModal';
+import { BlockedSlotModal, type BlockedSlotModalState } from '../components/BlockedSlotModal';
 import { UpdateAppointmentModal } from '../components/UpdateAppointmentModal';
 import { appointmentStatus, sessionDuration, therapistColor } from '../types';
 import { useToast } from '../contexts/ToastContext';
-import { useConfirm } from '../contexts/ConfirmDialog';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Lock, Plus, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,8 +41,11 @@ import './Calendar.css';
 type ViewMode = 'day' | 'week' | 'month';
 type CalendarScope = 'mine' | 'clinic';
 
+type DragKind = 'appointment' | 'blocked';
+
 type DragDraft = {
-  aptId: number;
+  kind: DragKind;
+  id: number;
   mode: 'move' | 'resize';
   date: string;
   startMinutes: number;
@@ -204,7 +206,6 @@ const visibleRange = (viewMode: ViewMode, currentDate: Date) => {
 
 export const Calendar = () => {
   const { showToast } = useToast();
-  const { confirm } = useConfirm();
   const chooserRef = useRef<HTMLDivElement>(null);
   const [currentDate, setCurrentDate] = useState(() => parseStoredDate(readCalendarState()?.currentDate));
   const [viewMode, setViewMode] = useState<ViewMode>(
@@ -219,6 +220,7 @@ export const Calendar = () => {
   const [addModalDuration, setAddModalDuration] = useState<number | undefined>();
   const [now, setNow] = useState(() => new Date());
   const timeGridRef = useRef<HTMLDivElement>(null);
+  const autoScrollToNowKey = useRef<string | null>(null);
   const [updateModalAppointment, setUpdateModalAppointment] =
     useState<AppointmentWithClient | null>(null);
   const [peekAppointment, setPeekAppointment] = useState<AppointmentWithClient | null>(null);
@@ -234,6 +236,7 @@ export const Calendar = () => {
     x: number;
     y: number;
   } | null>(null);
+  const [blockedSlotModal, setBlockedSlotModal] = useState<BlockedSlotModalState>(null);
   const [createPreview, setCreatePreview] = useState<{
     dayKey: string;
     startMinutes: number;
@@ -241,7 +244,9 @@ export const Calendar = () => {
   } | null>(null);
   const [dragDraft, setDragDraft] = useState<DragDraft | null>(null);
   const dragSession = useRef<{
-    apt: AppointmentWithClient;
+    kind: DragKind;
+    apt?: AppointmentWithClient;
+    blocked?: BlockedSlot;
     mode: 'move' | 'resize';
     originX: number;
     originY: number;
@@ -266,10 +271,13 @@ export const Calendar = () => {
   } | null>(null);
   useFocusTrap(Boolean(slotChooser), chooserRef);
 
-  const loadAppointments = useCallback(async () => {
+  const loadAppointments = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     const range = visibleRange(viewMode, currentDate);
-    try {
+    if (!silent) {
       setLoading(true);
+    }
+    try {
       const [data, blocked] = await Promise.all([
         getAllAppointments(calendarScope, range),
         getBlockedSlots(range.from, range.to).catch(() => [] as BlockedSlot[]),
@@ -279,7 +287,9 @@ export const Calendar = () => {
     } catch (error) {
       console.error('Error loading appointments:', error);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
     try {
       setClinic(await getMyClinic());
@@ -289,7 +299,7 @@ export const Calendar = () => {
   }, [calendarScope, viewMode, currentDate]);
 
   useEffect(() => {
-    loadAppointments();
+    void loadAppointments();
   }, [loadAppointments]);
 
   useEffect(() => {
@@ -309,6 +319,10 @@ export const Calendar = () => {
 
   useEffect(() => {
     if (loading || viewMode === 'month' || !timeGridRef.current) return;
+    const scrollKey = `${viewMode}:${format(currentDate, 'yyyy-MM-dd')}`;
+    if (autoScrollToNowKey.current === scrollKey) {
+      return;
+    }
     const today = new Date();
     const days =
       viewMode === 'day'
@@ -317,10 +331,14 @@ export const Calendar = () => {
             start: startOfWeek(currentDate, { weekStartsOn: 1 }),
             end: endOfWeek(currentDate, { weekStartsOn: 1 }),
           });
-    if (!days.some((day) => isSameDay(day, today))) return;
+    if (!days.some((day) => isSameDay(day, today))) {
+      autoScrollToNowKey.current = scrollKey;
+      return;
+    }
     const { startMinutes } = resolveGridRange();
     const nowMin = today.getHours() * 60 + today.getMinutes();
     timeGridRef.current.scrollTop = Math.max(0, ((nowMin - startMinutes) / 60) * HOUR_PX - 160);
+    autoScrollToNowKey.current = scrollKey;
   }, [loading, viewMode, currentDate]);
 
   useEffect(() => {
@@ -352,7 +370,7 @@ export const Calendar = () => {
   const goToday = () => setCurrentDate(new Date());
 
   const displayAppointment = (apt: AppointmentWithClient): AppointmentWithClient => {
-    if (!dragDraft || dragDraft.aptId !== apt.id) {
+    if (!dragDraft || dragDraft.kind !== 'appointment' || dragDraft.id !== apt.id) {
       return apt;
     }
     return {
@@ -360,6 +378,19 @@ export const Calendar = () => {
       appointmentDate: dragDraft.date,
       appointmentTime: minutesToTime(dragDraft.startMinutes),
       durationMinutes: dragDraft.duration,
+    };
+  };
+
+  const displayBlockedSlot = (slot: BlockedSlot): BlockedSlot => {
+    if (!dragDraft || dragDraft.kind !== 'blocked' || dragDraft.id !== slot.id) {
+      return slot;
+    }
+    const endMinutes = dragDraft.startMinutes + dragDraft.duration;
+    return {
+      ...slot,
+      slotDate: dragDraft.date,
+      startTime: minutesToTime(dragDraft.startMinutes),
+      endTime: minutesToTime(endMinutes),
     };
   };
 
@@ -385,7 +416,9 @@ export const Calendar = () => {
 
   const getBlockedForDate = (date: Date) => {
     const dayStr = format(date, 'yyyy-MM-dd');
-    return blockedSlots.filter((slot) => slot.slotDate === dayStr);
+    return blockedSlots
+      .map(displayBlockedSlot)
+      .filter((slot) => slot.slotDate.slice(0, 10) === dayStr);
   };
 
   const formatTime = (time: string | null) => (time || '09:00').slice(0, 5);
@@ -434,6 +467,31 @@ export const Calendar = () => {
     const nextTime = minutesToTime(draft.startMinutes);
     const nextDate = draft.date;
     const nextDuration = draft.duration;
+    if (session.kind === 'blocked' && session.blocked) {
+      const slot = session.blocked;
+      const sameDate = slot.slotDate.slice(0, 10) === nextDate;
+      const sameTime = formatTime(slot.startTime) === nextTime;
+      const sameDuration = parseTimeMinutes(slot.endTime) - parseTimeMinutes(slot.startTime) === nextDuration;
+      if (sameTime && sameDate && sameDuration) {
+        return;
+      }
+      try {
+        await updateBlockedSlot(slot.id, {
+          slotDate: nextDate,
+          startTime: nextTime,
+          endTime: minutesToTime(nextDuration + draft.startMinutes),
+          title: slot.title ?? undefined,
+        });
+        await loadAppointments({ silent: true });
+      } catch (error) {
+        showToast(apiErrorMessage(error, 'Kapalı saat taşınamadı.'), 'error');
+        await loadAppointments({ silent: true });
+      }
+      return;
+    }
+    if (!session.apt) {
+      return;
+    }
     const sameTime = formatTime(session.apt.appointmentTime) === nextTime;
     const sameDate =
       (session.apt.appointmentDate.includes('T')
@@ -449,10 +507,10 @@ export const Calendar = () => {
         appointmentTime: nextTime,
         durationMinutes: nextDuration,
       });
-      await loadAppointments();
+      await loadAppointments({ silent: true });
     } catch (error) {
       showToast(apiErrorMessage(error, 'Randevu taşınamadı.'), 'error');
-      await loadAppointments();
+      await loadAppointments({ silent: true });
     }
   };
 
@@ -486,13 +544,22 @@ export const Calendar = () => {
       }
       session.moved = true;
       const { startMinutes } = resolveGridRange();
+      const entityId =
+        session.kind === 'appointment' ? session.apt?.id : session.blocked?.id;
+      if (entityId == null) {
+        return;
+      }
       if (session.mode === 'resize') {
         const offsetY = event.clientY - session.gridTop;
         const endMinutes = snapMinutes(startMinutes + (offsetY / HOUR_PX) * 60, 5);
-        const maxDuration = Math.min(240, DAY_MINUTES - session.startMinutes);
+        const maxDuration =
+          session.kind === 'appointment'
+            ? Math.min(240, DAY_MINUTES - session.startMinutes)
+            : DAY_MINUTES - session.startMinutes;
         const duration = Math.max(15, Math.min(maxDuration, endMinutes - session.startMinutes));
         session.draft = {
-          aptId: session.apt.id,
+          kind: session.kind,
+          id: entityId,
           mode: 'resize',
           date: session.date,
           startMinutes: session.startMinutes,
@@ -503,11 +570,13 @@ export const Calendar = () => {
       }
       const targetDay = dayFromClientX(event.clientX, session.days) ?? parseStoredDate(session.date);
       const offsetY = event.clientY - session.gridTop;
-      const rawStart = snapMinutes(startMinutes + (offsetY / HOUR_PX) * 60, 30);
+      const moveSnap = session.kind === 'blocked' ? CREATE_SNAP : 30;
+      const rawStart = snapMinutes(startMinutes + (offsetY / HOUR_PX) * 60, moveSnap);
       const maxStart = Math.max(0, DAY_MINUTES - session.duration);
       const nextStart = Math.max(0, Math.min(maxStart, rawStart));
       session.draft = {
-        aptId: session.apt.id,
+        kind: session.kind,
+        id: entityId,
         mode: 'move',
         date: format(targetDay, 'yyyy-MM-dd'),
         startMinutes: nextStart,
@@ -556,27 +625,79 @@ export const Calendar = () => {
     const column = (event.currentTarget as HTMLElement).closest('[data-cal-day]') as HTMLElement | null;
     const gridTop = column?.getBoundingClientRect().top ?? 0;
     const date = apt.appointmentDate.includes('T') ? apt.appointmentDate.split('T')[0] : apt.appointmentDate;
+    const startMinutes = parseTimeMinutes(apt.appointmentTime);
+    const duration = sessionDuration(apt.durationMinutes);
     const draft: DragDraft = {
-      aptId: apt.id,
+      kind: 'appointment',
+      id: apt.id,
       mode,
       date,
-      startMinutes: parseTimeMinutes(apt.appointmentTime),
-      duration: sessionDuration(apt.durationMinutes),
+      startMinutes,
+      duration,
     };
     dragSession.current = {
+      kind: 'appointment',
       apt,
       mode,
       originX: event.clientX,
       originY: event.clientY,
       moved: false,
-      startMinutes: parseTimeMinutes(apt.appointmentTime),
-      duration: sessionDuration(apt.durationMinutes),
+      startMinutes,
+      duration,
       date,
       gridTop,
       days,
       draft,
     };
     setDragDraft(draft);
+  };
+
+  const startBlockedDrag = (
+    slot: BlockedSlot,
+    mode: 'move' | 'resize',
+    event: React.PointerEvent,
+    days: Date[]
+  ) => {
+    event.stopPropagation();
+    if (mode === 'resize') {
+      event.preventDefault();
+    }
+    const column = (event.currentTarget as HTMLElement).closest('[data-cal-day]') as HTMLElement | null;
+    const gridTop = column?.getBoundingClientRect().top ?? 0;
+    const date = slot.slotDate.slice(0, 10);
+    const startMinutes = parseTimeMinutes(slot.startTime);
+    const duration = Math.max(15, parseTimeMinutes(slot.endTime) - startMinutes);
+    const draft: DragDraft = {
+      kind: 'blocked',
+      id: slot.id,
+      mode,
+      date,
+      startMinutes,
+      duration,
+    };
+    dragSession.current = {
+      kind: 'blocked',
+      blocked: slot,
+      mode,
+      originX: event.clientX,
+      originY: event.clientY,
+      moved: false,
+      startMinutes,
+      duration,
+      date,
+      gridTop,
+      days,
+      draft,
+    };
+    setDragDraft(draft);
+  };
+
+  const handleBlockedPointerDown = (slot: BlockedSlot, event: React.PointerEvent, days: Date[]) => {
+    startBlockedDrag(slot, 'move', event, days);
+  };
+
+  const handleBlockedResizePointerDown = (slot: BlockedSlot, event: React.PointerEvent, days: Date[]) => {
+    startBlockedDrag(slot, 'resize', event, days);
   };
 
   const handleCardPointerDown = (
@@ -626,29 +747,19 @@ export const Calendar = () => {
 
   const closeSlotChooser = () => setSlotChooser(null);
 
-  const addClosedSlot = async (day: Date, time: string, duration: number) => {
-    const start = parseTimeMinutes(time);
-    const end = Math.min(DAY_MINUTES, start + sessionDuration(duration));
-    if (end - start < 15) {
-      showToast('Bu saatte kapalı aralık açılamaz.', 'error');
-      return;
-    }
-    try {
-      await createBlockedSlot({
-        slotDate: format(day, 'yyyy-MM-dd'),
-        startTime: time,
-        endTime: minutesToTime(end),
-        title: 'Kapalı',
-      });
-      closeSlotChooser();
-      await loadAppointments();
-    } catch (error) {
-      showToast(apiErrorMessage(error, 'Kapalı saat eklenemedi.'), 'error');
-    }
+  const openBlockedSlotModal = (day: Date, time: string, duration: number) => {
+    closeSlotChooser();
+    setBlockedSlotModal({
+      mode: 'create',
+      slotDate: format(day, 'yyyy-MM-dd'),
+      startTime: time,
+      durationMinutes: duration,
+    });
   };
 
   useEffect(() => {
     setSlotChooser(null);
+    setBlockedSlotModal(null);
     setCreatePreview(null);
     createRangeRef.current = null;
   }, [viewMode, currentDate]);
@@ -662,21 +773,12 @@ export const Calendar = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [slotChooser]);
 
-  const handleBlockedClick = async (slot: BlockedSlot, event: React.MouseEvent) => {
+  const handleBlockedClick = (slot: BlockedSlot, event: React.MouseEvent) => {
     event.stopPropagation();
-    const ok = await confirm({
-      title: 'Kapalı saati sil',
-      message: 'Bu kapalı saat silinsin mi?',
-      confirmLabel: 'Sil',
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await deleteBlockedSlot(slot.id);
-      await loadAppointments();
-    } catch (error) {
-      showToast(apiErrorMessage(error, 'Kapalı saat silinemedi.'), 'error');
+    if (suppressClick.current || dragSession.current?.moved) {
+      return;
     }
+    setBlockedSlotModal({ mode: 'edit', slot });
   };
 
   const cardStyle = (apt: AppointmentWithClient) => {
@@ -781,19 +883,29 @@ export const Calendar = () => {
                     const end = parseTimeMinutes(slot.endTime);
                     const top = ((start - startMinutes) / 60) * HOUR_PX;
                     const height = Math.max(((end - start) / 60) * HOUR_PX - 2, 16);
+                    const dragging = dragDraft?.kind === 'blocked' && dragDraft.id === slot.id;
                     return (
-                      <button
+                      <div
                         key={slot.id}
-                        type="button"
-                        className="time-blocked"
+                        className={cn('time-blocked', dragging && 'is-dragging')}
                         style={{ top, height }}
                         title={`${formatTime(slot.startTime)}–${formatTime(slot.endTime)} · ${slot.title || 'Kapalı'}`}
-                        onClick={(event) => {
-                          void handleBlockedClick(slot, event);
+                        onPointerDown={(event) => handleBlockedPointerDown(slot, event, days)}
+                        onClick={(event) => handleBlockedClick(slot, event)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            setBlockedSlotModal({ mode: 'edit', slot });
+                          }
                         }}
                       >
-                        {slot.title || 'Kapalı'}
-                      </button>
+                        <span className="time-blocked-label">{slot.title || 'Kapalı'}</span>
+                        <span
+                          className="time-blocked-resize"
+                          onPointerDown={(event) => handleBlockedResizePointerDown(slot, event, days)}
+                        />
+                      </div>
                     );
                   })}
                   {laidOut.map((item) => {
@@ -801,7 +913,7 @@ export const Calendar = () => {
                     const height = Math.max(((item.end - item.start) / 60) * HOUR_PX - 2, 28);
                     const width = `calc((100% - 6px) / ${item.cols})`;
                     const left = `calc(3px + ${item.col} * (100% - 6px) / ${item.cols})`;
-                    const dragging = dragDraft?.aptId === item.apt.id;
+                    const dragging = dragDraft?.kind === 'appointment' && dragDraft.id === item.apt.id;
                     return (
                       <div
                         key={item.apt.id}
@@ -972,7 +1084,7 @@ export const Calendar = () => {
         </div>
       </div>
 
-      {loading ? (
+      {loading && appointments.length === 0 ? (
         <div className="calendar-content items-center justify-center text-sm text-muted-foreground">Yükleniyor...</div>
       ) : (
         <div className="calendar-content">
@@ -994,7 +1106,7 @@ export const Calendar = () => {
         onSuccess={(createdAppointment) => {
           setAddModalTime(undefined);
           setAddModalDuration(undefined);
-          loadAppointments();
+          void loadAppointments({ silent: true });
           if (createdAppointment) {
             setAddModalOpen(false);
             setUpdateModalAppointment(createdAppointment);
@@ -1005,8 +1117,13 @@ export const Calendar = () => {
       <UpdateAppointmentModal
         isOpen={!!updateModalAppointment}
         onClose={() => setUpdateModalAppointment(null)}
-        onSuccess={loadAppointments}
+        onSuccess={() => void loadAppointments({ silent: true })}
         appointment={updateModalAppointment}
+      />
+      <BlockedSlotModal
+        state={blockedSlotModal}
+        onClose={() => setBlockedSlotModal(null)}
+        onSuccess={() => void loadAppointments({ silent: true })}
       />
       {slotChooser ? (
         <div className="fixed inset-0 z-40" onClick={closeSlotChooser}>
@@ -1042,7 +1159,7 @@ export const Calendar = () => {
               type="button"
               className="flex cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-sm text-foreground [font-family:inherit] hover:bg-accent"
               onClick={() => {
-                void addClosedSlot(slotChooser.day, slotChooser.time, slotChooser.duration);
+                openBlockedSlotModal(slotChooser.day, slotChooser.time, slotChooser.duration);
               }}
             >
               <Lock className="size-4 text-muted-foreground" />

@@ -309,6 +309,19 @@ export const createBlockedSlot = async (data: {
   return response.data;
 };
 
+export const updateBlockedSlot = async (
+  id: number,
+  data: {
+    slotDate: string;
+    startTime: string;
+    endTime: string;
+    title?: string;
+  }
+): Promise<BlockedSlot> => {
+  const response = await api.put<BlockedSlot>(`/me/blocked-slots/${id}`, data);
+  return response.data;
+};
+
 export const deleteBlockedSlot = async (id: number): Promise<void> => {
   await api.delete(`/me/blocked-slots/${id}`);
 };

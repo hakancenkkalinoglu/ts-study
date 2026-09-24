@@ -2,6 +2,7 @@ package com.testpsikolog.service;
 
 import com.testpsikolog.dto.BlockedSlotResponse;
 import com.testpsikolog.dto.CreateBlockedSlotRequest;
+import com.testpsikolog.dto.UpdateBlockedSlotRequest;
 import com.testpsikolog.util.ScheduleInputs;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -50,26 +51,10 @@ public class ScheduleService {
 
     @Transactional
     public BlockedSlotResponse create(long userId, CreateBlockedSlotRequest request) {
-        String date = ScheduleInputs.requireDate(request.slotDate());
-        String startTime = ScheduleInputs.requireTime(request.startTime());
-        String endTime = ScheduleInputs.requireTime(request.endTime());
-        int start = toMinutes(startTime);
-        int end = toMinutes(endTime);
-        if (end <= start) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitiş, başlangıçtan sonra olmalı.");
-        }
-        if (end - start < 15) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kapalı aralık en az 15 dakika olmalı.");
-        }
-        if (end > 24 * 60) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aralık gece yarısını geçemez.");
-        }
+        ParsedRange range = parseRange(request.slotDate(), request.startTime(), request.endTime());
+        String title = normalizeTitle(request.title());
         lockTherapistSchedule(userId);
-        if (overlaps(loadBlockedSlots(userId, date), start, end)
-                || overlaps(loadAppointmentSlots(userId, date), start, end)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat aralığı dolu veya kapalı.");
-        }
-        String title = request.title() == null || request.title().isBlank() ? "Kapalı" : request.title().trim();
+        assertSlotAvailable(userId, range.date(), range.start(), range.end(), null);
         Long id = jdbc.queryForObject(
                 """
                 INSERT INTO blocked_slots (userId, slotDate, startTime, endTime, title, createdAt)
@@ -78,12 +63,43 @@ public class ScheduleService {
                 """,
                 Long.class,
                 userId,
-                date,
-                startTime,
-                endTime,
+                range.date(),
+                range.startTime(),
+                range.endTime(),
                 title
         );
-        return new BlockedSlotResponse(id == null ? 0L : id, date, startTime, endTime, title);
+        return new BlockedSlotResponse(id == null ? 0L : id, range.date(), range.startTime(), range.endTime(), title);
+    }
+
+    @Transactional
+    public BlockedSlotResponse update(long userId, long slotId, UpdateBlockedSlotRequest request) {
+        Integer owned = jdbc.query(
+                "SELECT id FROM blocked_slots WHERE id = ? AND userId = ?",
+                rs -> rs.next() ? rs.getInt("id") : null,
+                slotId,
+                userId
+        );
+        if (owned == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Kapalı saat bulunamadı.");
+        }
+        ParsedRange range = parseRange(request.slotDate(), request.startTime(), request.endTime());
+        String title = normalizeTitle(request.title());
+        lockTherapistSchedule(userId);
+        assertSlotAvailable(userId, range.date(), range.start(), range.end(), slotId);
+        jdbc.update(
+                """
+                UPDATE blocked_slots
+                SET slotDate = ?, startTime = ?, endTime = ?, title = ?
+                WHERE id = ? AND userId = ?
+                """,
+                range.date(),
+                range.startTime(),
+                range.endTime(),
+                title,
+                slotId,
+                userId
+        );
+        return new BlockedSlotResponse(slotId, range.date(), range.startTime(), range.endTime(), title);
     }
 
     public int delete(long userId, long slotId) {
@@ -101,15 +117,16 @@ public class ScheduleService {
         }
         int start = toMinutes(appointmentTime);
         int end = start + durationMinutes;
-        return overlaps(loadBlockedSlots(userId, date), start, end);
+        return overlaps(loadBlockedSlots(userId, date, null), start, end);
     }
 
-    private List<TimeSlot> loadBlockedSlots(long userId, String slotDate) {
+    private List<TimeSlot> loadBlockedSlots(long userId, String slotDate, Long excludeBlockedId) {
         return jdbc.query(
                 """
                 SELECT startTime, endTime
                 FROM blocked_slots
                 WHERE userId = ? AND slotDate = ?
+                  AND (CAST(? AS BIGINT) IS NULL OR id <> ?)
                 """,
                 (rs, rowNum) -> {
                     int start = toMinutes(rs.getString("startTime"));
@@ -117,8 +134,43 @@ public class ScheduleService {
                     return new TimeSlot(start, Math.max(0, end - start));
                 },
                 userId,
-                slotDate
+                slotDate,
+                excludeBlockedId,
+                excludeBlockedId
         );
+    }
+
+    private void assertSlotAvailable(long userId, String date, int start, int end, Long excludeBlockedId) {
+        if (overlaps(loadBlockedSlots(userId, date, excludeBlockedId), start, end)
+                || overlaps(loadAppointmentSlots(userId, date), start, end)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu saat aralığı dolu veya kapalı.");
+        }
+    }
+
+    private static ParsedRange parseRange(String slotDate, String startTimeRaw, String endTimeRaw) {
+        String date = ScheduleInputs.requireDate(slotDate);
+        String startTime = ScheduleInputs.requireTime(startTimeRaw);
+        String endTime = ScheduleInputs.requireTime(endTimeRaw);
+        int start = toMinutes(startTime);
+        int end = toMinutes(endTime);
+        if (end <= start) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitiş, başlangıçtan sonra olmalı.");
+        }
+        if (end - start < 15) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kapalı aralık en az 15 dakika olmalı.");
+        }
+        if (end > 24 * 60) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aralık gece yarısını geçemez.");
+        }
+        return new ParsedRange(date, startTime, endTime, start, end);
+    }
+
+    private static String normalizeTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return "Kapalı";
+        }
+        String trimmed = title.trim();
+        return trimmed.length() > 80 ? trimmed.substring(0, 80) : trimmed;
     }
 
     private List<TimeSlot> loadAppointmentSlots(long userId, String appointmentDate) {
@@ -170,5 +222,8 @@ public class ScheduleService {
     }
 
     private record TimeSlot(int start, int durationMinutes) {
+    }
+
+    private record ParsedRange(String date, String startTime, String endTime, int start, int end) {
     }
 }

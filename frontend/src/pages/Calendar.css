@@ -171,15 +171,46 @@
   box-sizing: border-box;
   border-radius: 6px;
   z-index: 1;
-  padding: 4px 8px;
+  padding: 4px 8px 10px;
   text-align: left;
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted-foreground);
-  cursor: pointer;
+  cursor: grab;
   background: repeating-linear-gradient(-45deg, var(--muted), var(--muted) 6px, var(--card) 6px, var(--card) 12px);
   border: 1px dashed var(--input);
+  user-select: none;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.time-blocked.is-dragging {
+  cursor: grabbing;
+  z-index: 4;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+
+.time-blocked-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.time-blocked-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  cursor: ns-resize;
+  z-index: 3;
+}
+
+.time-blocked-resize:hover {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .time-create-preview {
