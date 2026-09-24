@@ -12,7 +12,9 @@ import { Calendar } from './pages/Calendar';
 import { Payments } from './pages/Payments';
 import { Reports } from './pages/Reports';
 import { ClinicPage } from './pages/Clinic';
+import { ClinicOverviewPage } from './pages/ClinicOverview';
 import { Account } from './pages/Account';
+import { InviteAccept } from './pages/InviteAccept';
 import { NotFound } from './pages/NotFound';
 import { exchangeGoogleAuth, getStoredToken, setStoredToken } from './services/api';
 
@@ -43,7 +45,13 @@ const AppProviders = ({ children }: { children: ReactNode }) => (
   </ThemeProvider>
 );
 
+const readInviteToken = (): string | null => {
+  const match = window.location.pathname.match(/^\/invite\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
 function App() {
+  const [inviteToken, setInviteToken] = useState(() => readInviteToken());
   const [authCode] = useState(() => readAuthCodeFromUrl());
   const [token, setToken] = useState<string | null>(() => (authCode ? null : getStoredToken()));
   const [bootstrapping, setBootstrapping] = useState(() => Boolean(authCode));
@@ -77,6 +85,21 @@ function App() {
     };
   }, [authCode]);
 
+  if (inviteToken) {
+    return (
+      <AppProviders>
+        <InviteAccept
+          token={inviteToken}
+          onAccepted={() => {
+            window.history.replaceState({}, '', '/klinik');
+            setInviteToken(null);
+            setToken(getStoredToken());
+          }}
+        />
+      </AppProviders>
+    );
+  }
+
   if (bootstrapping) {
     return (
       <AppProviders>
@@ -104,6 +127,7 @@ function App() {
             <Route path="/odemeler" element={<Payments />} />
             <Route path="/raporlar" element={<Reports />} />
             <Route path="/klinik" element={<ClinicPage />} />
+            <Route path="/klinik-raporu" element={<ClinicOverviewPage />} />
             <Route path="/hesap" element={<Account />} />
             <Route path="/client/:id" element={<ClientDetail />} />
             <Route path="*" element={<NotFound />} />

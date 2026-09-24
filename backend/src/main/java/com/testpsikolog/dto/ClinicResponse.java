@@ -9,6 +9,7 @@ public record ClinicResponse(
         long ownerUserId,
         String role,
         List<ClinicMemberResponse> members,
-        List<ClinicRoomResponse> rooms
+        List<ClinicRoomResponse> rooms,
+        List<String> permissions
 ) {
 }

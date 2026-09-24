@@ -7,6 +7,7 @@ import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatu
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { ClinicEarnings } from '../components/ClinicEarnings';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { NativeSelect } from '@/components/ui/input';
@@ -317,6 +318,7 @@ export const Reports = () => {
         </Card>
       ) : (
         <>
+          <ClinicEarnings year={selectedYear} month={selectedMonth} monthLabel={MONTHS[selectedMonth]} />
           <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Özet">
             <StatCard
               icon={CalendarCheck2}

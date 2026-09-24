@@ -499,6 +499,8 @@ public class AuthService {
         }
         jdbc.update("DELETE FROM blocked_slots WHERE userId = ?", userId);
         jdbc.update("DELETE FROM clinic_members WHERE userId = ?", userId);
+        jdbc.update("DELETE FROM commission_rates WHERE userId = ?", userId);
+        jdbc.update("DELETE FROM clinic_share_payments WHERE userId = ?", userId);
         jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
         if (email != null) {
             jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email.toLowerCase());

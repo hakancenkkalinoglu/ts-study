@@ -30,7 +30,10 @@ import {
   updateClinicRoom,
   apiErrorMessage,
 } from '../services/api';
+import { clinicCan } from '../types';
 import type { Clinic } from '../types';
+import { ClinicCommissions } from '../components/ClinicCommissions';
+import { ClinicInvitations } from '../components/ClinicInvitations';
 import { useConfirm } from '../contexts/ConfirmDialog';
 import { useToast } from '../contexts/ToastContext';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +73,11 @@ export const ClinicPage = () => {
   const [editingRoomName, setEditingRoomName] = useState('');
   const [editingRoomColor, setEditingRoomColor] = useState('#7a4a2b');
   const isOwner = clinic?.role === 'owner';
+  const canManageClinic = clinicCan(clinic, 'MANAGE_CLINIC');
+  const canManageRooms = clinicCan(clinic, 'MANAGE_ROOMS');
+  const canInvite = clinicCan(clinic, 'INVITE_MEMBERS');
+  const canManageMembers = clinicCan(clinic, 'MANAGE_MEMBERS');
+  const canSetCommission = clinicCan(clinic, 'SET_COMMISSION');
 
   const loadClinic = useCallback(async () => {
     try {
@@ -369,7 +377,7 @@ export const ClinicPage = () => {
             {copied ? <Check /> : <Copy />}
             {copied ? 'Kopyalandı' : 'Kopyala'}
           </Button>
-          {isOwner ? (
+          {canInvite ? (
             <Button variant="ghost" size="icon-sm" onClick={() => void handleRotate()} aria-label="Kodu yenile" title="Kodu yenile">
               <RefreshCw />
             </Button>
@@ -399,7 +407,7 @@ export const ClinicPage = () => {
                 ) : (
                   <Badge>Üye</Badge>
                 )}
-                {isOwner && member.role !== 'owner' ? (
+                {canManageMembers && member.role !== 'owner' ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-sm" aria-label={`${member.name} işlemleri`}>
@@ -407,11 +415,15 @@ export const ClinicPage = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => void handleTransfer(member.userId, member.name)}>
-                        <Crown />
-                        Kurucu yap
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
+                      {canManageClinic ? (
+                        <>
+                          <DropdownMenuItem onSelect={() => void handleTransfer(member.userId, member.name)}>
+                            <Crown />
+                            Kurucu yap
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      ) : null}
                       <DropdownMenuItem destructive onSelect={() => void handleKick(member.userId, member.name)}>
                         <UserMinus />
                         Klinikten çıkar
@@ -450,7 +462,7 @@ export const ClinicPage = () => {
                   <div className="flex items-center gap-3">
                     <span className="size-4 shrink-0 rounded" style={{ background: room.color || 'var(--muted-foreground)' }} />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{room.name}</span>
-                    {isOwner ? (
+                    {canManageRooms ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon-sm" aria-label={`${room.name} işlemleri`}>
@@ -481,7 +493,7 @@ export const ClinicPage = () => {
               </li>
             ))}
           </ul>
-          {isOwner ? (
+          {canManageRooms ? (
             <form className="flex items-center gap-2 border-0 border-t border-solid px-5 py-4" onSubmit={handleAddRoom}>
               <ColorInput value={roomColor} onChange={setRoomColor} label="Yeni oda rengi" />
               <Input
@@ -501,8 +513,15 @@ export const ClinicPage = () => {
         </Card>
       </div>
 
+      {canInvite || canSetCommission ? (
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          {canInvite ? <ClinicInvitations /> : null}
+          {canSetCommission ? <ClinicCommissions /> : null}
+        </div>
+      ) : null}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        {isOwner ? (
+        {canManageClinic ? (
           <Card>
             <form onSubmit={handleRename} className="flex flex-col gap-4 p-5">
               <div>
@@ -522,6 +541,7 @@ export const ClinicPage = () => {
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1">
               <h2 className="m-0 text-[15px] font-semibold">{isOwner ? 'Kliniği sil' : 'Klinikten ayrıl'}</h2>
+              {/* Kurucu ayrılamaz, yalnızca siler; bu yüzden rol (yetki değil) kullanılır. */}
               <p className="m-0 mt-1 text-sm text-muted-foreground">
                 {isOwner
                   ? 'Klinik, odalar ve üyelikler silinir. Randevular kalır.'

@@ -125,12 +125,19 @@ public class ClinicService {
         if (clinicId == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Davet kodu bulunamadı.");
         }
+        addMember(clinicId, userId);
+        return loadClinic(clinicId, userId);
+    }
+
+    public void addMember(long clinicId, long userId) {
+        if (clinicIdForUser(userId) != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Zaten bir kliniğe bağlısınız.");
+        }
         jdbc.update(
                 "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'member', utc_now_text())",
                 clinicId,
                 userId
         );
-        return loadClinic(clinicId, userId);
     }
 
     @Transactional
@@ -166,17 +173,20 @@ public class ClinicService {
         if (clinic == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Klinik bulunamadı.");
         }
-        if (!"owner".equals(clinic.role())) {
+        if (!ClinicPermission.forRole(clinic.role()).contains(ClinicPermission.MANAGE_CLINIC)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Kliniği sadece kurucu silebilir.");
         }
         jdbc.update("UPDATE appointments SET clinicId = NULL, roomId = NULL WHERE clinicId = ?", clinic.id());
         jdbc.update("DELETE FROM clinic_rooms WHERE clinicId = ?", clinic.id());
+        jdbc.update("DELETE FROM commission_rates WHERE clinicId = ?", clinic.id());
+        jdbc.update("DELETE FROM clinic_share_payments WHERE clinicId = ?", clinic.id());
+        jdbc.update("DELETE FROM clinic_invitations WHERE clinicId = ?", clinic.id());
         jdbc.update("DELETE FROM clinic_members WHERE clinicId = ?", clinic.id());
         jdbc.update("DELETE FROM clinics WHERE id = ?", clinic.id());
     }
 
     public ClinicRoomResponse addRoom(long userId, CreateRoomRequest request) {
-        requireOwner(userId);
+        requirePermission(userId, ClinicPermission.MANAGE_ROOMS);
         Long clinicId = requireClinicId(userId);
         String name = requireName(request == null ? null : request.name(), "Oda adı gerekli.");
         String color = normalizeColor(request == null ? null : request.color(), nextRoomColor(clinicId));
@@ -191,7 +201,7 @@ public class ClinicService {
     }
 
     public ClinicRoomResponse updateRoom(long userId, long roomId, UpdateRoomRequest request) {
-        requireOwner(userId);
+        requirePermission(userId, ClinicPermission.MANAGE_ROOMS);
         requireOwnedRoom(userId, roomId);
         String name = request == null ? null : blankToNull(request.name());
         String color = request == null ? null : blankToNull(request.color());
@@ -213,7 +223,7 @@ public class ClinicService {
 
     @Transactional
     public void deleteRoom(long userId, long roomId) {
-        requireOwner(userId);
+        requirePermission(userId, ClinicPermission.MANAGE_ROOMS);
         requireOwnedRoom(userId, roomId);
         jdbc.update("UPDATE appointments SET roomId = NULL WHERE roomId = ?", roomId);
         jdbc.update("DELETE FROM clinic_rooms WHERE id = ?", roomId);
@@ -232,14 +242,14 @@ public class ClinicService {
     }
 
     public ClinicResponse rename(long userId, UpdateClinicRequest request) {
-        ClinicResponse clinic = requireOwner(userId);
+        ClinicResponse clinic = requirePermission(userId, ClinicPermission.MANAGE_CLINIC);
         String name = requireName(request == null ? null : request.name(), "Klinik adı gerekli.");
         jdbc.update("UPDATE clinics SET name = ? WHERE id = ?", name, clinic.id());
         return loadClinic(clinic.id(), userId);
     }
 
     public ClinicResponse rotateInvite(long userId) {
-        ClinicResponse clinic = requireOwner(userId);
+        ClinicResponse clinic = requirePermission(userId, ClinicPermission.INVITE_MEMBERS);
         String code = newInviteCode();
         jdbc.update("UPDATE clinics SET inviteCode = ? WHERE id = ?", code, clinic.id());
         return loadClinic(clinic.id(), userId);
@@ -247,7 +257,7 @@ public class ClinicService {
 
     @Transactional
     public ClinicResponse kickMember(long userId, long memberUserId) {
-        ClinicResponse clinic = requireOwner(userId);
+        ClinicResponse clinic = requirePermission(userId, ClinicPermission.MANAGE_MEMBERS);
         if (memberUserId == userId) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kendinizi çıkaramazsınız.");
         }
@@ -265,7 +275,7 @@ public class ClinicService {
 
     @Transactional
     public ClinicResponse transferOwnership(long userId, TransferOwnerRequest request) {
-        ClinicResponse clinic = requireOwner(userId);
+        ClinicResponse clinic = requirePermission(userId, ClinicPermission.MANAGE_CLINIC);
         Long nextOwnerId = request == null ? null : request.userId();
         if (nextOwnerId == null || nextOwnerId == userId) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sahipliği başka bir üyeye devredin.");
@@ -285,13 +295,13 @@ public class ClinicService {
         return loadClinic(clinic.id(), userId);
     }
 
-    private ClinicResponse requireOwner(long userId) {
+    public ClinicResponse requirePermission(long userId, ClinicPermission permission) {
         ClinicResponse clinic = getMine(userId);
         if (clinic == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Klinik bulunamadı.");
         }
-        if (!"owner".equals(clinic.role())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bu işlemi sadece kurucu yapabilir.");
+        if (!ClinicPermission.forRole(clinic.role()).contains(permission)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bu işlem için yetkiniz yok.");
         }
         return clinic;
     }
@@ -313,6 +323,7 @@ public class ClinicService {
                         rs.getString("inviteCode"),
                         rs.getLong("ownerUserId"),
                         "",
+                        List.of(),
                         List.of(),
                         List.of()
                 ),
@@ -355,7 +366,8 @@ public class ClinicService {
                 header.ownerUserId(),
                 role,
                 members,
-                rooms
+                rooms,
+                ClinicPermission.namesForRole(role)
         );
     }
 

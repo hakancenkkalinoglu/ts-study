@@ -4,6 +4,7 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  LayoutDashboard,
   LogOut,
   Moon,
   MoreHorizontal,
@@ -14,7 +15,8 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
-import { clearStoredToken, getProfile } from '@/services/api';
+import { clearStoredToken, getMyClinic, getProfile } from '@/services/api';
+import { clinicCan } from '@/types';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +41,8 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/takvim', label: 'Takvim', icon: CalendarDays },
   { to: '/odemeler', label: 'Ödemeler', icon: Wallet },
 ];
+
+const OVERVIEW_NAV: NavItem = { to: '/klinik-raporu', label: 'Klinik Raporu', icon: LayoutDashboard };
 
 const SECONDARY_NAV: NavItem[] = [
   { to: '/raporlar', label: 'Raporlar', icon: BarChart3 },
@@ -81,6 +85,7 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [canViewOverview, setCanViewOverview] = useState(false);
 
   useEffect(() => {
     getProfile()
@@ -89,7 +94,16 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
         setEmail(profile.email || '');
       })
       .catch(() => undefined);
+    getMyClinic()
+      .then((clinic) =>
+        setCanViewOverview(clinicCan(clinic, 'VIEW_CLINIC_REPORTS') || clinicCan(clinic, 'VIEW_CLINIC_SCHEDULE'))
+      )
+      .catch(() => undefined);
   }, []);
+
+  const secondaryNav = canViewOverview
+    ? [SECONDARY_NAV[0], OVERVIEW_NAV, ...SECONDARY_NAV.slice(1)]
+    : SECONDARY_NAV;
 
   const handleLogout = () => {
     clearStoredToken();
@@ -113,7 +127,7 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
             <SidebarLink key={item.to} item={item} />
           ))}
           <div className="mx-3 my-3 h-px bg-border" />
-          {SECONDARY_NAV.map((item) => (
+          {secondaryNav.map((item) => (
             <SidebarLink key={item.to} item={item} />
           ))}
         </nav>
@@ -179,7 +193,7 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top">
-            {SECONDARY_NAV.map((item) => (
+            {secondaryNav.map((item) => (
               <DropdownMenuItem key={item.to} onSelect={() => navigate(item.to)}>
                 <item.icon />
                 {item.label}

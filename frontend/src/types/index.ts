@@ -154,6 +154,121 @@ export type Clinic = {
   role: string;
   members: ClinicMember[];
   rooms: ClinicRoom[];
+  permissions: ClinicPermission[];
+};
+
+export type ClinicPermission =
+  | 'MANAGE_CLINIC'
+  | 'MANAGE_ROOMS'
+  | 'INVITE_MEMBERS'
+  | 'MANAGE_MEMBERS'
+  | 'SET_COMMISSION'
+  | 'MANAGE_PAYMENTS'
+  | 'VIEW_CLINIC_SCHEDULE'
+  | 'VIEW_CLINIC_REPORTS';
+
+export const clinicCan = (clinic: Clinic | null | undefined, permission: ClinicPermission): boolean =>
+  Boolean(clinic?.permissions?.includes(permission));
+
+export type Invitation = {
+  id: number;
+  email: string;
+  expiresAt: number;
+  inviteUrl: string | null;
+};
+
+export type InvitationPreview = {
+  clinicName: string;
+  email: string;
+  accountExists: boolean;
+};
+
+export type CommissionMember = {
+  userId: number;
+  name: string;
+  percent: number;
+  custom: boolean;
+};
+
+export type CommissionOverview = {
+  defaultPercent: number;
+  members: CommissionMember[];
+};
+
+export type TherapistReport = {
+  userId: number;
+  name: string;
+  sessions: number;
+  paidAmount: number;
+  pendingAmount: number;
+  clinicShare: number;
+  sharePaid: number;
+  shareRemaining: number;
+  netAmount: number;
+  currentPercent: number;
+};
+
+export type SharePayment = {
+  id: number;
+  amount: number;
+  paidOn: string;
+  note: string | null;
+};
+
+export type FeeStatus = 'none' | 'paid' | 'partial' | 'unpaid';
+
+export type TherapistFee = {
+  userId: number;
+  name: string;
+  sessions: number;
+  percent: number;
+  owed: number;
+  paid: number;
+  remaining: number;
+  cumulativeRemaining: number;
+  status: FeeStatus;
+  payments: SharePayment[];
+};
+
+export type ClinicFeeReport = {
+  month: string;
+  totalOwed: number;
+  totalPaid: number;
+  totalRemaining: number;
+  totalCumulativeRemaining: number;
+  therapists: TherapistFee[];
+};
+
+export type ClinicOverview = {
+  from: string;
+  to: string;
+  sessions: number;
+  cancelled: number;
+  noShow: number;
+  therapists: {
+    userId: number;
+    name: string;
+    role: string;
+    sessions: number;
+    cancelled: number;
+    noShow: number;
+    rooms: string[];
+    /** 1 = Pazartesi ... 7 = Pazar */
+    weekdays: number[];
+  }[];
+  rooms: { roomId: number; name: string; color: string | null; sessions: number; minutes: number }[];
+};
+
+export type ClinicReport = {
+  from: string;
+  to: string;
+  sessions: number;
+  paidAmount: number;
+  pendingAmount: number;
+  clinicShare: number;
+  sharePaid: number;
+  shareRemaining: number;
+  therapists: TherapistReport[];
 };
 
 export const THERAPIST_COLORS = ['#7a4a2b', '#3f7f6e', '#a86a2f', '#6d5a8c', '#4f6f8f', '#9a4f4f'];

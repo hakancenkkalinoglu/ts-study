@@ -11,6 +11,13 @@ import type {
   BlockedSlot,
   Clinic,
   ClinicRoom,
+  ClinicFeeReport,
+  ClinicOverview,
+  ClinicReport,
+  CommissionOverview,
+  SharePayment,
+  Invitation,
+  InvitationPreview,
   UpdateNoteInput,
   Profile,
   SessionPackage,
@@ -38,7 +45,8 @@ const isPublicAuthUrl = (url?: string) => {
     path.includes('/auth/forgot-password') ||
     path.includes('/auth/reset-password') ||
     path.includes('/auth/google/login') ||
-    path.includes('/auth/google/exchange')
+    path.includes('/auth/google/exchange') ||
+    path.includes('/auth/invitations/')
   );
 };
 
@@ -389,6 +397,91 @@ export const kickClinicMember = async (memberUserId: number): Promise<Clinic> =>
 export const transferClinicOwnership = async (userId: number): Promise<Clinic> => {
   const response = await api.post<Clinic>('/clinic/transfer', { userId });
   return response.data;
+};
+
+export const createClinicInvitation = async (email: string): Promise<Invitation> => {
+  const response = await api.post<Invitation>('/clinic/invitations', { email });
+  return response.data;
+};
+
+export const getClinicInvitations = async (): Promise<Invitation[]> => {
+  const response = await api.get<Invitation[]>('/clinic/invitations');
+  return response.data;
+};
+
+export const revokeClinicInvitation = async (invitationId: number): Promise<void> => {
+  await api.delete(`/clinic/invitations/${invitationId}`);
+};
+
+export const getInvitationPreview = async (token: string): Promise<InvitationPreview> => {
+  const response = await api.get<InvitationPreview>(`/auth/invitations/${encodeURIComponent(token)}`);
+  return response.data;
+};
+
+export const acceptInvitation = async (
+  token: string,
+  password: string,
+  displayName?: string
+): Promise<{ token: string; username: string; email?: string }> => {
+  const response = await api.post<{ token: string; username: string; email?: string }>(
+    `/auth/invitations/${encodeURIComponent(token)}/accept`,
+    { password, displayName }
+  );
+  return response.data;
+};
+
+export const getCommissions = async (): Promise<CommissionOverview> => {
+  const response = await api.get<CommissionOverview>('/clinic/commissions');
+  return response.data;
+};
+
+export const setDefaultCommission = async (percent: number, validFrom?: string): Promise<CommissionOverview> => {
+  const response = await api.put<CommissionOverview>('/clinic/commissions/default', { percent, validFrom });
+  return response.data;
+};
+
+export const setMemberCommission = async (
+  userId: number,
+  percent: number | null,
+  validFrom?: string
+): Promise<CommissionOverview> => {
+  const response = await api.put<CommissionOverview>(`/clinic/commissions/members/${userId}`, { percent, validFrom });
+  return response.data;
+};
+
+export const applyCommissionToAll = async (percent: number, validFrom?: string): Promise<CommissionOverview> => {
+  const response = await api.post<CommissionOverview>('/clinic/commissions/apply-all', { percent, validFrom });
+  return response.data;
+};
+
+export const getClinicFeeReport = async (month: string): Promise<ClinicFeeReport> => {
+  const response = await api.get<ClinicFeeReport>('/clinic/fee-report', { params: { month } });
+  return response.data;
+};
+
+export const recordSharePayment = async (data: {
+  userId: number;
+  period: string;
+  amount: number;
+  paidOn?: string;
+  note?: string;
+}): Promise<SharePayment> => {
+  const response = await api.post<SharePayment>('/clinic/share-payments', data);
+  return response.data;
+};
+
+export const deleteSharePayment = async (paymentId: number): Promise<void> => {
+  await api.delete(`/clinic/share-payments/${paymentId}`);
+};
+
+export const getClinicOverview = async (from: string, to: string): Promise<ClinicOverview> => {
+  const response = await api.get<ClinicOverview>('/clinic/overview', { params: { from, to } });
+  return response.data;
+};
+
+export const getMyEarnings = async (from: string, to: string): Promise<ClinicReport | null> => {
+  const response = await api.get<ClinicReport | ''>('/clinic/my-earnings', { params: { from, to } });
+  return response.data === '' ? null : response.data;
 };
 
 export const getClientPackages = async (clientId: number): Promise<SessionPackage[]> => {
