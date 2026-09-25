@@ -205,9 +205,19 @@ export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment
       <DialogContent
         title="Randevuyu düzenle"
         description={
-          <span className="flex items-center gap-2">
-            <Avatar name={appointment.clientName} className="size-5 text-[9px]" />
-            {appointment.clientName || 'Danışan'}
+          <span className="flex flex-col gap-1">
+            <span className="flex items-center gap-2">
+              <Avatar name={appointment.clientName} className="size-5 text-[9px]" />
+              {appointment.clientName || 'Danışan'}
+            </span>
+            {appointment.createdByName && (
+              <span className="text-xs text-muted-foreground">
+                Oluşturan: {appointment.createdByName}
+                {appointment.updatedByName && appointment.updatedByName !== appointment.createdByName
+                  ? ` · Son güncelleyen: ${appointment.updatedByName}`
+                  : ''}
+              </span>
+            )}
           </span>
         }
       >

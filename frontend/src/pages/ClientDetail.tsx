@@ -681,6 +681,8 @@ export const ClientDetail = () => {
             )}
           </InfoItem>
           <InfoItem label="Kayıt tarihi">{formatDate(client.createdAt)}</InfoItem>
+          <InfoItem label="Kaydı oluşturan">{client.createdByName || '–'}</InfoItem>
+          <InfoItem label="Son güncelleyen">{client.updatedByName || '–'}</InfoItem>
         </dl>
       </Card>
 

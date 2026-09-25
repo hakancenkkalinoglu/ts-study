@@ -25,6 +25,8 @@ public record AppointmentResponse(
         int durationMinutes,
         String seriesId,
         Integer sessionFee,
+        String createdByName,
+        String updatedByName,
         boolean mine
 ) {
 }

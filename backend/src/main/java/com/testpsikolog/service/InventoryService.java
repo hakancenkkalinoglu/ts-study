@@ -104,8 +104,8 @@ public class InventoryService {
         String interpretation = interpret(inventory.code(), score);
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO client_inventory_results (clientId, inventoryId, answers, score, interpretation, createdAt)
-                VALUES (?, ?, ?, ?, ?, utc_now_text())
+                INSERT INTO client_inventory_results (clientId, inventoryId, answers, score, interpretation, createdAt, createdBy)
+                VALUES (?, ?, ?, ?, ?, utc_now_text(), ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -113,7 +113,8 @@ public class InventoryService {
                 inventoryId,
                 encoded.toString(),
                 score,
-                interpretation
+                interpretation,
+                userId
         );
         return new InventoryResultResponse(
                 id == null ? 0L : id,

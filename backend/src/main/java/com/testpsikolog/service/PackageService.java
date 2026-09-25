@@ -51,8 +51,8 @@ public class PackageService {
         int prepaid = request == null || request.prepaidAmount() == null ? 0 : Math.max(0, request.prepaidAmount());
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO session_packages (clientId, title, totalSessions, remainingSessions, prepaidAmount, createdAt)
-                VALUES (?, ?, ?, ?, ?, utc_now_text())
+                INSERT INTO session_packages (clientId, title, totalSessions, remainingSessions, prepaidAmount, createdAt, createdBy)
+                VALUES (?, ?, ?, ?, ?, utc_now_text(), ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -60,7 +60,8 @@ public class PackageService {
                 title,
                 total,
                 total,
-                prepaid
+                prepaid,
+                userId
         );
         return getOwned(userId, clientId, id == null ? 0L : id);
     }

@@ -9,6 +9,8 @@ export type Client = {
   emergencyPhone?: string | null;
   createdAt: string;
   updatedAt: string;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 };
 
 export type CreateClientInput = {
@@ -95,6 +97,8 @@ export type Appointment = {
   durationMinutes?: number | null;
   seriesId?: string | null;
   sessionFee?: number | null;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 };
 
 export type AppointmentWithClient = Appointment & {
@@ -293,6 +297,8 @@ export type Note = {
   noteDate: string;
   createdAt: string;
   updatedAt: string;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 };
 
 export type Profile = {

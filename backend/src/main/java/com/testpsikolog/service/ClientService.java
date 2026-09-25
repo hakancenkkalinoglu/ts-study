@@ -4,6 +4,7 @@ import com.testpsikolog.dto.ClientResponse;
 import com.testpsikolog.dto.CreateClientRequest;
 import com.testpsikolog.dto.UpdateClientRequest;
 import com.testpsikolog.util.AttachmentFiles;
+import com.testpsikolog.util.AuditColumns;
 import com.testpsikolog.util.ScheduleInputs;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -18,7 +19,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class ClientService {
 
     private static final String CLIENT_COLUMNS =
-            "id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt, updatedAt";
+            "id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt, updatedAt, "
+                    + AuditColumns.names("clients");
 
     private static final RowMapper<ClientResponse> CLIENT_MAPPER = (rs, rowNum) -> new ClientResponse(
             rs.getLong("id"),
@@ -30,7 +32,9 @@ public class ClientService {
             rs.getString("emergencyName"),
             rs.getString("emergencyPhone"),
             rs.getString("createdAt"),
-            rs.getString("updatedAt")
+            rs.getString("updatedAt"),
+            rs.getString("createdByName"),
+            rs.getString("updatedByName")
     );
 
     private final JdbcTemplate jdbc;
@@ -85,8 +89,8 @@ public class ClientService {
         int agreedFee = requestedFee == null ? 2000 : requestedFee;
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt, createdBy, updatedBy)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text(), ?, ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -98,7 +102,9 @@ public class ClientService {
                 userId,
                 blankToNull(request.phone()),
                 blankToNull(request.emergencyName()),
-                blankToNull(request.emergencyPhone())
+                blankToNull(request.emergencyPhone()),
+                userId,
+                userId
         );
         return id == null ? 0L : id;
     }
@@ -130,7 +136,8 @@ public class ClientService {
                   phone = COALESCE(?, phone),
                   emergencyName = COALESCE(?, emergencyName),
                   emergencyPhone = COALESCE(?, emergencyPhone),
-                  updatedAt = utc_now_text()
+                  updatedAt = utc_now_text(),
+                  updatedBy = ?
                 WHERE id = ? AND userId = ?
                 """,
                 emailProvided ? 1 : 0,
@@ -144,6 +151,7 @@ public class ClientService {
                 trimPresent(data.phone()),
                 trimPresent(data.emergencyName()),
                 trimPresent(data.emergencyPhone()),
+                userId,
                 id,
                 userId
         );

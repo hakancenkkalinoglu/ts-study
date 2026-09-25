@@ -4,6 +4,7 @@ import com.testpsikolog.dto.AppointmentResponse;
 import com.testpsikolog.dto.CreateAppointmentRequest;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
 import com.testpsikolog.util.AttachmentFiles;
+import com.testpsikolog.util.AuditColumns;
 import com.testpsikolog.util.ScheduleInputs;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -29,7 +30,11 @@ public class AppointmentService {
             SELECT a.*, c.name as clientName, c.agreedFee as agreedFee, c.email as clientEmail,
                    c.userId as therapistUserId,
                    COALESCE(NULLIF(u.displayName, ''), NULLIF(u.email, ''), u.username) as therapistName,
-                   r.name as roomName, r.color as roomColor
+                   r.name as roomName, r.color as roomColor,
+            """
+            + AuditColumns.names("a")
+            + """
+
             FROM appointments a
             INNER JOIN clients c ON a.clientId = c.id
             LEFT JOIN app_users u ON c.userId = u.id
@@ -61,6 +66,8 @@ public class AppointmentService {
             readDuration(rs),
             columnExists(rs, "seriesId") ? rs.getString("seriesId") : null,
             readInt(rs, "sessionFee"),
+            columnExists(rs, "createdByName") ? rs.getString("createdByName") : null,
+            columnExists(rs, "updatedByName") ? rs.getString("updatedByName") : null,
             true
     );
 
@@ -106,9 +113,9 @@ public class AppointmentService {
                 """
                 INSERT INTO appointments (
                   clientId, userId, appointmentDate, appointmentTime, title, isPaid, status,
-                  clinicId, roomId, durationMinutes, sessionFee, createdAt, updatedAt
+                  clinicId, roomId, durationMinutes, sessionFee, createdAt, updatedAt, createdBy, updatedBy
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text(), ?, ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -122,7 +129,9 @@ public class AppointmentService {
                 clinicId,
                 roomId,
                 duration,
-                sessionFee
+                sessionFee,
+                userId,
+                userId
         );
         return List.of(id == null ? 0L : id);
     }
@@ -274,7 +283,8 @@ public class AppointmentService {
                   roomId = ?,
                   durationMinutes = COALESCE(?, durationMinutes),
                   sessionFee = CASE WHEN ? = 1 THEN ? ELSE sessionFee END,
-                  updatedAt = utc_now_text()
+                  updatedAt = utc_now_text(),
+                  updatedBy = ?
                 WHERE id = ? AND clientId = ?
                 """,
                 data.appointmentDate() != null ? newDate : null,
@@ -289,6 +299,7 @@ public class AppointmentService {
                 durationVal,
                 sessionFeeProvided ? 1 : 0,
                 clearSessionFee ? null : data.sessionFee(),
+                userId,
                 appointmentId,
                 clientId
         );
@@ -332,12 +343,13 @@ public class AppointmentService {
         return jdbc.update(
                 """
                 UPDATE appointments
-                SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = utc_now_text()
+                SET googleEventId = ?, googleMeetLink = ?, googleHtmlLink = ?, updatedAt = utc_now_text(), updatedBy = ?
                 WHERE id = ?
                 """,
                 eventId,
                 meetLink,
                 htmlLink,
+                userId,
                 appointmentId
         );
     }
@@ -448,6 +460,8 @@ public class AppointmentService {
                         row.durationMinutes(),
                         null,
                         null,
+                        null,
+                        null,
                         false
                 ));
             }
@@ -481,6 +495,8 @@ public class AppointmentService {
                 row.durationMinutes(),
                 row.seriesId(),
                 row.sessionFee(),
+                row.createdByName(),
+                row.updatedByName(),
                 mine
         );
     }

@@ -9,6 +9,8 @@ public record NoteResponse(
         String fileName,
         String noteDate,
         String createdAt,
-        String updatedAt
+        String updatedAt,
+        String createdByName,
+        String updatedByName
 ) {
 }

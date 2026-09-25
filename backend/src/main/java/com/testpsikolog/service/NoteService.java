@@ -3,6 +3,7 @@ package com.testpsikolog.service;
 import com.testpsikolog.dto.CreateNoteRequest;
 import com.testpsikolog.dto.NoteResponse;
 import com.testpsikolog.dto.UpdateNoteRequest;
+import com.testpsikolog.util.AuditColumns;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,8 +34,12 @@ public class NoteService {
             rs.getString("fileName"),
             rs.getString("noteDate"),
             rs.getString("createdAt"),
-            rs.getString("updatedAt")
+            rs.getString("updatedAt"),
+            rs.getString("createdByName"),
+            rs.getString("updatedByName")
     );
+
+    private static final String NOTE_SELECT = "SELECT client_notes.*, " + AuditColumns.names("client_notes") + " FROM client_notes";
 
     private final JdbcTemplate jdbc;
     private final ClientService clientService;
@@ -60,8 +65,8 @@ public class NoteService {
         }
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO client_notes (clientId, appointmentId, title, content, noteDate, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, utc_now_text(), utc_now_text())
+                INSERT INTO client_notes (clientId, appointmentId, title, content, noteDate, createdAt, updatedAt, createdBy, updatedBy)
+                VALUES (?, ?, ?, ?, ?, utc_now_text(), utc_now_text(), ?, ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -69,7 +74,9 @@ public class NoteService {
                 note.appointmentId(),
                 note.title(),
                 note.content().trim(),
-                note.noteDate()
+                note.noteDate(),
+                userId,
+                userId
         );
         return id == null ? 0L : id;
     }
@@ -77,7 +84,7 @@ public class NoteService {
     public List<NoteResponse> getByClientId(long userId, long clientId) {
         clientService.requireOwned(userId, clientId);
         return jdbc.query(
-                "SELECT * FROM client_notes WHERE clientId = ? ORDER BY noteDate DESC, createdAt DESC",
+                NOTE_SELECT + " WHERE clientId = ? ORDER BY noteDate DESC, createdAt DESC",
                 NOTE_MAPPER,
                 clientId
         );
@@ -90,7 +97,7 @@ public class NoteService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Randevu bulunamadı.");
         }
         return jdbc.query(
-                "SELECT * FROM client_notes WHERE appointmentId = ? ORDER BY noteDate DESC, createdAt DESC",
+                NOTE_SELECT + " WHERE appointmentId = ? ORDER BY noteDate DESC, createdAt DESC",
                 NOTE_MAPPER,
                 appointmentId
         );
@@ -109,12 +116,14 @@ public class NoteService {
                   title = COALESCE(?, title),
                   content = COALESCE(?, content),
                   noteDate = COALESCE(?, noteDate),
-                  updatedAt = utc_now_text()
+                  updatedAt = utc_now_text(),
+                  updatedBy = ?
                 WHERE id = ? AND clientId = ?
                 """,
                 data.title(),
                 data.content() == null ? null : data.content().trim(),
                 data.noteDate(),
+                userId,
                 noteId,
                 clientId
         );
@@ -153,11 +162,12 @@ public class NoteService {
             jdbc.update(
                     """
                     UPDATE client_notes
-                    SET filePath = ?, fileName = ?, updatedAt = utc_now_text()
+                    SET filePath = ?, fileName = ?, updatedAt = utc_now_text(), updatedBy = ?
                     WHERE id = ? AND clientId = ?
                     """,
                     target.toString(),
                     safeName,
+                    userId,
                     noteId,
                     clientId
             );
@@ -203,7 +213,8 @@ public class NoteService {
         requireOwnedNote(userId, clientId, noteId);
         deleteStoredFile(userId, noteId);
         jdbc.update(
-                "UPDATE client_notes SET filePath = NULL, fileName = NULL, updatedAt = utc_now_text() WHERE id = ? AND clientId = ?",
+                "UPDATE client_notes SET filePath = NULL, fileName = NULL, updatedAt = utc_now_text(), updatedBy = ? WHERE id = ? AND clientId = ?",
+                userId,
                 noteId,
                 clientId
         );

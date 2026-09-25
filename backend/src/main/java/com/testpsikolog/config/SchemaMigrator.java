@@ -21,6 +21,7 @@ public class SchemaMigrator implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         createFunctions();
         createTables();
+        addAuditColumns();
         createIndexes();
         createOverlapConstraints();
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
@@ -298,6 +299,32 @@ public class SchemaMigrator implements ApplicationRunner {
                 )
                 """
         );
+    }
+
+    /**
+     * createdBy / updatedBy: kaydı oluşturan ve en son güncelleyen kullanıcı (app_users.id).
+     * Paket ve envanter sonucu güncellenen kayıt olmadığı için yalnızca createdBy alır.
+     * Eski kayıtları yalnızca danışanın sahibi oluşturabildiği için sahibiyle doldurur.
+     */
+    private void addAuditColumns() {
+        for (String table : List.of("clients", "appointments", "client_notes")) {
+            jdbc.execute("ALTER TABLE " + table + " ADD COLUMN IF NOT EXISTS createdBy BIGINT");
+            jdbc.execute("ALTER TABLE " + table + " ADD COLUMN IF NOT EXISTS updatedBy BIGINT");
+        }
+        for (String table : List.of("session_packages", "client_inventory_results")) {
+            jdbc.execute("ALTER TABLE " + table + " ADD COLUMN IF NOT EXISTS createdBy BIGINT");
+        }
+        jdbc.update("UPDATE clients SET createdBy = userId WHERE createdBy IS NULL AND userId IS NOT NULL");
+        jdbc.update("UPDATE clients SET updatedBy = userId WHERE updatedBy IS NULL AND userId IS NOT NULL");
+        for (String table : List.of("appointments", "client_notes")) {
+            String owner = "(SELECT c.userId FROM clients c WHERE c.id = " + table + ".clientId)";
+            jdbc.update("UPDATE " + table + " SET createdBy = " + owner + " WHERE createdBy IS NULL");
+            jdbc.update("UPDATE " + table + " SET updatedBy = " + owner + " WHERE updatedBy IS NULL");
+        }
+        for (String table : List.of("session_packages", "client_inventory_results")) {
+            String owner = "(SELECT c.userId FROM clients c WHERE c.id = " + table + ".clientId)";
+            jdbc.update("UPDATE " + table + " SET createdBy = " + owner + " WHERE createdBy IS NULL");
+        }
     }
 
     private void createIndexes() {

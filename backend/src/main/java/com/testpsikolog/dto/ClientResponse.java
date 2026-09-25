@@ -10,6 +10,8 @@ public record ClientResponse(
         String emergencyName,
         String emergencyPhone,
         String createdAt,
-        String updatedAt
+        String updatedAt,
+        String createdByName,
+        String updatedByName
 ) {
 }
