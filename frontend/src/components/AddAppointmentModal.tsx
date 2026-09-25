@@ -4,6 +4,8 @@ import { apiErrorMessage, createAppointment, getAppointmentById, getClients, get
 import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
 import { sessionDuration, sessionDurationOptions } from '../types';
 import { istanbulTodayYmd } from '../utils/dates';
+import { useRoomAvailability } from '../hooks/useRoomAvailability';
+import { roomHint, roomLabel } from '../utils/rooms';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Field, FormError, Input, NativeSelect } from '@/components/ui/input';
@@ -53,6 +55,12 @@ export const AddAppointmentModal = ({
   const [error, setError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const availability = useRoomAvailability(
+    isOpen,
+    formData.appointmentDate,
+    formData.appointmentTime,
+    sessionDuration(formData.durationMinutes)
+  );
 
   const fetchClients = useCallback(async (term: string) => {
     setSearching(true);
@@ -260,18 +268,21 @@ export const AddAppointmentModal = ({
               </Field>
             </div>
             {rooms.length > 0 ? (
-              <Field label="Oda" htmlFor="roomId">
+              <Field label="Oda" htmlFor="roomId" hint={roomHint(availability, formData.roomId)}>
                 <NativeSelect
                   id="roomId"
                   value={formData.roomId}
                   onChange={(e) => setFormData({ ...formData, roomId: Number(e.target.value) })}
                 >
                   <option value={0}>Seçilmedi</option>
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.name}
-                    </option>
-                  ))}
+                  {rooms.map((room) => {
+                    const busy = availability.find((item) => item.id === room.id)?.busy ?? false;
+                    return (
+                      <option key={room.id} value={room.id} disabled={busy}>
+                        {roomLabel(room.name, busy)}
+                      </option>
+                    );
+                  })}
                 </NativeSelect>
               </Field>
             ) : null}

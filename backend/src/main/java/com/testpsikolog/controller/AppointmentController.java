@@ -9,6 +9,7 @@ import com.testpsikolog.dto.DeletedResponse;
 import com.testpsikolog.dto.IdResponse;
 import com.testpsikolog.dto.MeetResponse;
 import com.testpsikolog.dto.NoteResponse;
+import com.testpsikolog.dto.RoomAvailabilityResponse;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
 import com.testpsikolog.dto.UpdatedResponse;
 import com.testpsikolog.service.AppointmentService;
@@ -52,6 +53,17 @@ public class AppointmentController {
         this.googleCalendarService = googleCalendarService;
         this.currentUserService = currentUserService;
         this.authService = authService;
+    }
+
+    @GetMapping("/appointments/room-availability")
+    public List<RoomAvailabilityResponse> getRoomAvailability(
+            @RequestParam("date") String date,
+            @RequestParam("time") String time,
+            @RequestParam(value = "duration", required = false) Integer duration,
+            @RequestParam(value = "excludeAppointmentId", required = false) Long excludeAppointmentId
+    ) {
+        long userId = currentUserService.requireUser().id();
+        return appointmentService.roomAvailability(userId, date, time, duration, excludeAppointmentId);
     }
 
     @GetMapping("/appointments/upcoming")

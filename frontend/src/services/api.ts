@@ -362,6 +362,18 @@ export const getClinicRooms = async (): Promise<ClinicRoom[]> => {
   return response.data;
 };
 
+export type RoomAvailability = ClinicRoom & { busy: boolean };
+
+export const getRoomAvailability = async (params: {
+  date: string;
+  time: string;
+  duration: number;
+  excludeAppointmentId?: number;
+}): Promise<RoomAvailability[]> => {
+  const response = await api.get<RoomAvailability[]>('/appointments/room-availability', { params });
+  return response.data;
+};
+
 export const createClinicRoom = async (name: string, color?: string): Promise<ClinicRoom> => {
   const response = await api.post<ClinicRoom>('/clinic/rooms', { name, color });
   return response.data;

@@ -12,6 +12,8 @@ import {
 import type { AppointmentStatus, AppointmentWithClient, ClinicRoom } from '../types';
 import { APPOINTMENT_STATUSES, appointmentStatus, sessionDuration, sessionDurationOptions } from '../types';
 import { useConfirm } from '../contexts/ConfirmDialog';
+import { useRoomAvailability } from '../hooks/useRoomAvailability';
+import { roomHint, roomLabel } from '../utils/rooms';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Field, FormError, Input, NativeSelect, Switch } from '@/components/ui/input';
@@ -71,6 +73,13 @@ export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment
   const [copied, setCopied] = useState(false);
 
   const displayMeetLink = appointment?.googleMeetLink ?? meetLink;
+  const availability = useRoomAvailability(
+    isOpen && !!appointment,
+    formData.appointmentDate || (appointment ? getInitialFormData(appointment).appointmentDate : ''),
+    formData.appointmentDate ? formData.appointmentTime : appointment ? getInitialFormData(appointment).appointmentTime : '',
+    sessionDuration(formData.appointmentDate ? formData.durationMinutes : appointment?.durationMinutes),
+    appointment?.id
+  );
 
   useEffect(() => {
     if (appointment) {
@@ -271,18 +280,21 @@ export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment
                 </NativeSelect>
               </Field>
               {rooms.length > 0 ? (
-                <Field label="Oda" htmlFor="upd-room">
+                <Field label="Oda" htmlFor="upd-room" hint={roomHint(availability, currentFormData.roomId)}>
                   <NativeSelect
                     id="upd-room"
                     value={currentFormData.roomId}
                     onChange={(e) => setField({ roomId: Number(e.target.value) })}
                   >
                     <option value={0}>Seçilmedi</option>
-                    {rooms.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.name}
-                      </option>
-                    ))}
+                    {rooms.map((room) => {
+                      const busy = availability.find((item) => item.id === room.id)?.busy ?? false;
+                      return (
+                        <option key={room.id} value={room.id} disabled={busy}>
+                          {roomLabel(room.name, busy)}
+                        </option>
+                      );
+                    })}
                   </NativeSelect>
                 </Field>
               ) : null}

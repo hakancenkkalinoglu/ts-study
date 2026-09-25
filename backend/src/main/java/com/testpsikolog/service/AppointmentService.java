@@ -1,7 +1,9 @@
 package com.testpsikolog.service;
 
 import com.testpsikolog.dto.AppointmentResponse;
+import com.testpsikolog.dto.ClinicRoomResponse;
 import com.testpsikolog.dto.CreateAppointmentRequest;
+import com.testpsikolog.dto.RoomAvailabilityResponse;
 import com.testpsikolog.dto.UpdateAppointmentRequest;
 import com.testpsikolog.util.AttachmentFiles;
 import com.testpsikolog.util.AuditColumns;
@@ -352,6 +354,25 @@ public class AppointmentService {
                 userId,
                 appointmentId
         );
+    }
+
+    /** Verilen tarih, saat ve sürede kliniğin her odasının dolu olup olmadığı. Oda yoksa boş liste. */
+    public List<RoomAvailabilityResponse> roomAvailability(
+            long userId,
+            String date,
+            String time,
+            Integer durationMinutes,
+            Long excludeAppointmentId
+    ) {
+        String dateStr = ScheduleInputs.requireDate(date);
+        String timeStr = ScheduleInputs.requireTime(time);
+        int duration = ScheduleInputs.requireDuration(durationMinutes);
+        List<RoomAvailabilityResponse> result = new ArrayList<>();
+        for (ClinicRoomResponse room : clinicService.listRooms(userId)) {
+            boolean busy = hasOverlap(loadRoomSlots(room.id(), dateStr, excludeAppointmentId), timeStr, duration);
+            result.add(new RoomAvailabilityResponse(room.id(), room.name(), room.color(), busy));
+        }
+        return result;
     }
 
     private void assertNoConflict(
