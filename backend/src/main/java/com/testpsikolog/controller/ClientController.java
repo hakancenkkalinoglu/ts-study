@@ -175,6 +175,12 @@ public class ClientController {
         return new DeletedResponse(1);
     }
 
+    @GetMapping("/packages/expiring")
+    public List<com.testpsikolog.dto.ExpiringPackageResponse> listExpiringPackages() {
+        long userId = currentUserService.requireUser().id();
+        return packageService.listExpiring(userId);
+    }
+
     @GetMapping("/clients/{clientId}/packages")
     public List<com.testpsikolog.dto.SessionPackageResponse> listPackages(@PathVariable long clientId) {
         long userId = currentUserService.requireUser().id();

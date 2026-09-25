@@ -1,6 +1,7 @@
 package com.testpsikolog.service;
 
 import com.testpsikolog.dto.CreatePackageRequest;
+import com.testpsikolog.dto.ExpiringPackageResponse;
 import com.testpsikolog.dto.SessionPackageResponse;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -22,6 +23,9 @@ public class PackageService {
             rs.getString("createdAt")
     );
 
+    /** Kalan seans bu sayı veya altındaysa (ve en az 1 ise) paket "bitmek üzere" sayılır. Frontend'deki LOW_PACKAGE_SESSIONS ile aynı olmalı. */
+    private static final int LOW_SESSIONS = 2;
+
     private final JdbcTemplate jdbc;
     private final ClientService clientService;
 
@@ -36,6 +40,37 @@ public class PackageService {
                 "SELECT * FROM session_packages WHERE clientId = ? ORDER BY remainingSessions DESC, id DESC",
                 MAPPER,
                 clientId
+        );
+    }
+
+    /**
+     * Bitmek üzere olan paketler. Danışanın kalan seansı LOW_SESSIONS'tan fazla olan başka bir paketi varsa
+     * uyarı çıkmaz. Kalan 0 olan (bitmiş) paketler uyarı vermez, aksi halde eski paketler sonsuza kadar görünür.
+     */
+    public List<ExpiringPackageResponse> listExpiring(long userId) {
+        return jdbc.query(
+                """
+                SELECT p.id, p.clientId, c.name AS clientName, p.title, p.totalSessions, p.remainingSessions
+                FROM session_packages p
+                INNER JOIN clients c ON c.id = p.clientId
+                WHERE c.userId = ?
+                  AND p.remainingSessions BETWEEN 1 AND ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM session_packages o WHERE o.clientId = p.clientId AND o.remainingSessions > ?
+                  )
+                ORDER BY p.remainingSessions ASC, c.name ASC
+                """,
+                (rs, rowNum) -> new ExpiringPackageResponse(
+                        rs.getLong("id"),
+                        rs.getLong("clientId"),
+                        rs.getString("clientName"),
+                        rs.getString("title"),
+                        rs.getInt("totalSessions"),
+                        rs.getInt("remainingSessions")
+                ),
+                userId,
+                LOW_SESSIONS,
+                LOW_SESSIONS
         );
     }
 

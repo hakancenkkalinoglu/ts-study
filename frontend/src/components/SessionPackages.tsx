@@ -8,7 +8,9 @@ import {
   getClientPackages,
 } from '../services/api';
 import type { SessionPackage } from '../types';
+import { packageRunningLow } from '../types';
 import { useConfirm } from '../contexts/ConfirmDialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Field, FormError, Input } from '@/components/ui/input';
@@ -90,7 +92,10 @@ export const SessionPackages = ({ clientId }: { clientId: number }) => {
                     <Package className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="m-0 truncate text-sm font-semibold">{pack.title}</p>
+                    <p className="m-0 flex items-center gap-2 text-sm font-semibold">
+                      <span className="truncate">{pack.title}</span>
+                      {packageRunningLow(pack) ? <Badge variant="warning">Bitmek üzere</Badge> : null}
+                    </p>
                     <p className="m-0 text-[13px] text-muted-foreground">
                       {pack.remainingSessions} / {pack.totalSessions} seans kaldı
                       {pack.prepaidAmount ? ` · ${pack.prepaidAmount.toLocaleString('tr-TR')} ₺ peşin` : ''}

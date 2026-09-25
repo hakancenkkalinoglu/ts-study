@@ -11,6 +11,7 @@ import {
   CircleDashed,
   Clock3,
   MoreHorizontal,
+  Package,
   Undo2,
   UserRound,
   UserX,
@@ -19,8 +20,15 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { apiErrorMessage, getAllAppointments, getProfile, getUpcomingAppointments, updateAppointment } from '@/services/api';
-import type { AppointmentStatus, AppointmentWithClient, UpdateAppointmentInput } from '@/types';
+import {
+  apiErrorMessage,
+  getAllAppointments,
+  getExpiringPackages,
+  getProfile,
+  getUpcomingAppointments,
+  updateAppointment,
+} from '@/services/api';
+import type { AppointmentStatus, AppointmentWithClient, ExpiringPackage, UpdateAppointmentInput } from '@/types';
 import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel, sessionDurationLabel } from '@/types';
 import { istanbulTodayYmd } from '@/utils/dates';
 import { useToast } from '@/contexts/ToastContext';
@@ -79,6 +87,7 @@ export const Today = () => {
   const { confirm } = useConfirm();
   const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
   const [upcoming, setUpcoming] = useState<AppointmentWithClient[]>([]);
+  const [expiringPackages, setExpiringPackages] = useState<ExpiringPackage[]>([]);
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
@@ -90,6 +99,7 @@ export const Today = () => {
       setAppointments(data);
       setDisplayName(profile?.displayName ?? '');
       setUpcoming(await getUpcomingAppointments(profile?.reminderHours ?? 24));
+      setExpiringPackages(await getExpiringPackages().catch(() => []));
     } catch (error) {
       console.error('Error loading today appointments:', error);
       showToast('Randevular yüklenemedi.', 'error');
@@ -379,6 +389,32 @@ export const Today = () => {
               </ul>
             )}
           </Card>
+
+          {!loading && expiringPackages.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Paketi bitmek üzere</CardTitle>
+                <Package className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <ul className="m-0 mt-3 list-none divide-y divide-border p-0">
+                {expiringPackages.map((pack) => (
+                  <li key={pack.packageId}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/client/${pack.clientId}`)}
+                      className="flex w-full cursor-pointer items-center gap-3 border-0 bg-transparent px-5 py-3 text-left text-foreground [font-family:inherit]"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{pack.clientName || 'İsimsiz'}</span>
+                        <span className="block truncate text-[13px] text-muted-foreground">{pack.title}</span>
+                      </span>
+                      <Badge variant="warning">{pack.remainingSessions} seans kaldı</Badge>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {!loading && laterUpcoming.length > 0 ? (
             <Card>

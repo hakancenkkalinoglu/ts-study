@@ -320,6 +320,21 @@ export type SessionPackage = {
   createdAt: string;
 };
 
+export type ExpiringPackage = {
+  packageId: number;
+  clientId: number;
+  clientName: string | null;
+  title: string;
+  totalSessions: number;
+  remainingSessions: number;
+};
+
+/** Kalan seans bu sayı veya altındaysa (ve en az 1 ise) paket bitmek üzere. Backend'deki LOW_SESSIONS ile aynı. */
+export const LOW_PACKAGE_SESSIONS = 2;
+
+export const packageRunningLow = (pack: { remainingSessions: number }): boolean =>
+  pack.remainingSessions >= 1 && pack.remainingSessions <= LOW_PACKAGE_SESSIONS;
+
 export type InventorySummary = {
   id: number;
   code: string;

@@ -21,6 +21,7 @@ import type {
   UpdateNoteInput,
   Profile,
   SessionPackage,
+  ExpiringPackage,
   InventorySummary,
   InventoryDetail,
   InventoryResult,
@@ -494,6 +495,11 @@ export const getClinicOverview = async (from: string, to: string): Promise<Clini
 export const getMyEarnings = async (from: string, to: string): Promise<ClinicReport | null> => {
   const response = await api.get<ClinicReport | ''>('/clinic/my-earnings', { params: { from, to } });
   return response.data === '' ? null : response.data;
+};
+
+export const getExpiringPackages = async (): Promise<ExpiringPackage[]> => {
+  const response = await api.get<ExpiringPackage[]>('/packages/expiring');
+  return response.data;
 };
 
 export const getClientPackages = async (clientId: number): Promise<SessionPackage[]> => {
