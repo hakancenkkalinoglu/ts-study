@@ -19,13 +19,15 @@ type Props = {
   year: number;
   month: number;
   monthLabel: string;
+  /** Yüklenen rapor (klinik üyesi değilse veya hata olursa null); CSV dışa aktarma için üst sayfa kullanır. */
+  onReport?: (report: ClinicReport | null) => void;
 };
 
 /**
  * Klinik üyesi psikoloğun kendi kazancı ve oda payı durumu. Klinikte olmayanlarda ve kurucuda
  * gösterilmez: kurucu kendi seanslarından pay ödemez, kişisel rakamları zaten sayfanın geri kalanında.
  */
-export const ClinicEarnings = ({ year, month, monthLabel }: Props) => {
+export const ClinicEarnings = ({ year, month, monthLabel, onReport }: Props) => {
   const [report, setReport] = useState<ClinicReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,18 +37,26 @@ export const ClinicEarnings = ({ year, month, monthLabel }: Props) => {
     const load = async () => {
       setLoading(true);
       setError(null);
+      onReport?.(null); // ay değişince eski ayın rakamı yenisi gelene kadar dışa aktarmaya girmesin
       try {
         const clinic = await getMyClinic();
         if (cancelled) return;
         if (!clinic || clinic.role === 'owner') {
           setReport(null);
+          onReport?.(null);
           return;
         }
         const { from, to } = monthRange(year, month);
         const data = await getMyEarnings(from, to);
-        if (!cancelled) setReport(data);
+        if (!cancelled) {
+          setReport(data);
+          onReport?.(data);
+        }
       } catch (err) {
-        if (!cancelled) setError(apiErrorMessage(err, 'Klinik payı bilgisi alınamadı.'));
+        if (!cancelled) {
+          setError(apiErrorMessage(err, 'Klinik payı bilgisi alınamadı.'));
+          onReport?.(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -55,7 +65,7 @@ export const ClinicEarnings = ({ year, month, monthLabel }: Props) => {
     return () => {
       cancelled = true;
     };
-  }, [year, month]);
+  }, [year, month, onReport]);
 
   if (loading) {
     return (

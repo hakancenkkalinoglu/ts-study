@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Banknote, Hourglass, Plus, TrendingDown, Wallet, X } from 'lucide-react';
+import { Banknote, Download, Hourglass, Plus, TrendingDown, Wallet, X } from 'lucide-react';
 import { apiErrorMessage, deleteSharePayment, getClinicFeeReport, recordSharePayment } from '../services/api';
 import type { ClinicFeeReport, FeeStatus, TherapistFee } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { downloadCsv, type CsvCell } from '../utils/csv';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -101,6 +102,42 @@ export const ClinicFeeReportSection = ({ year, month, monthLabel, canManagePayme
     }
   };
 
+  // Yalnızca sunucunun bu kullanıcıya zaten verdiği rakamlar: psikolog tahsilatı ve danışan bilgisi yok.
+  const exportCsv = () => {
+    if (!report) return;
+    const rows: CsvCell[][] = [
+      ['Rapor', 'Oda ücreti raporu'],
+      ['Dönem', `${monthLabel} ${year}`],
+      [],
+      ['Oda geliri (₺)', report.totalOwed],
+      ['Tahsil edilen (₺)', report.totalPaid],
+      ['Kalan (₺)', report.totalRemaining],
+      ['Toplam kalan borç, önceki aylar dahil (₺)', report.totalCumulativeRemaining],
+      [],
+      ['Psikolog', 'Seans', 'Oran (%)', 'Oda payı (₺)', 'Ödenen (₺)', 'Kalan (₺)', 'Toplam kalan (₺)', 'Durum'],
+      ...report.therapists.map((row) => [
+        row.name,
+        row.sessions,
+        row.percent,
+        row.owed,
+        row.paid,
+        row.remaining,
+        row.cumulativeRemaining,
+        STATUS[row.status].label,
+      ]),
+    ];
+    const payments = report.therapists.flatMap((row) => row.payments.map((payment) => ({ name: row.name, payment })));
+    if (payments.length > 0) {
+      rows.push(
+        [],
+        ['Ödeme kayıtları'],
+        ['Psikolog', 'Tarih', 'Tutar (₺)', 'Not'],
+        ...payments.map(({ name, payment }) => [name, payment.paidOn.slice(0, 10), payment.amount, payment.note])
+      );
+    }
+    downloadCsv(`oda-ucreti-${period}.csv`, rows);
+  };
+
   if (loading && !report) {
     return (
       <Card className="mb-6">
@@ -151,6 +188,10 @@ export const ClinicFeeReportSection = ({ year, month, monthLabel, canManagePayme
                   Pay, odalarda yapılan iptal olmayan tüm seanslardan hesaplanır. Kendi seanslarınızdan pay alınmaz.
                 </CardDescription>
               </div>
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading}>
+                <Download />
+                CSV indir
+              </Button>
             </CardHeader>
             {report.therapists.length === 0 ? (
               <p className="m-0 px-5 pb-5 text-sm text-muted-foreground">Kliniğe bağlı başka psikolog yok.</p>

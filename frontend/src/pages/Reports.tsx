@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Banknote, CalendarCheck2, ChevronLeft, ChevronRight, Hourglass, TrendingUp } from 'lucide-react';
+import { Banknote, CalendarCheck2, ChevronLeft, ChevronRight, Download, Hourglass, TrendingUp } from 'lucide-react';
 import { getAllAppointments } from '../services/api';
-import type { AppointmentWithClient } from '../types';
+import type { AppointmentWithClient, ClinicReport } from '../types';
 import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ClinicEarnings } from '../components/ClinicEarnings';
+import { downloadCsv, type CsvCell } from '../utils/csv';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { NativeSelect } from '@/components/ui/input';
@@ -75,6 +76,7 @@ export const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [clinicReport, setClinicReport] = useState<ClinicReport | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -262,6 +264,48 @@ export const Reports = () => {
 
   const asOfText = format(now, 'd MMM yyyy HH:mm', { locale: tr });
 
+  // Danışan adı içeren tablolar (danışan bazlı seans ve borç) bilerek dosyaya girmez: yalnızca toplamlar.
+  const exportCsv = () => {
+    const mine = clinicReport?.therapists[0];
+    const rows: CsvCell[][] = [
+      ['Rapor', 'Aylık seans ve tahsilat raporu'],
+      ['Dönem', monthLabel],
+      ['Oluşturulma', asOfText],
+      [],
+      ['Seans durumu (iptaller dahil tüm randevular)'],
+      ['Durum', 'Adet', 'Yüzde (%)'],
+      ...statusBreakdown.map((row) => [row.label, row.count, row.percent]),
+      ['Toplam', monthTotal],
+      [],
+      ['Ödeme durumu (iptaller hariç)'],
+      ['Durum', 'Adet', 'Tutar (₺)'],
+      ...paymentBreakdown.map((row) => [row.label, row.count, row.amount]),
+      ['Toplam', paymentTotal, earnedThisMonth + pendingMonth],
+      [],
+      ['Özet'],
+      [`${monthLabel} seans sayısı (iptaller hariç)`, countedThisMonth.length],
+      [`${monthLabel} tahsilat (₺)`, earnedThisMonth],
+      [`${monthLabel} bekleyen (₺)`, pendingMonth],
+      [`${selectedYear} seans sayısı (iptaller hariç)`, countedThisYear.length],
+      [`${selectedYear} tahsilat (₺)`, earnedThisYear],
+      [`${selectedYear} bekleyen (₺)`, pendingYear],
+    ];
+    if (mine) {
+      rows.push(
+        [],
+        ['Klinik payı'],
+        ['Net kazanç (₺)', mine.netAmount],
+        ['Tahsilat (₺)', mine.paidAmount],
+        ['Oda payı, kliniğe (₺)', mine.clinicShare],
+        ['Oran (%)', mine.currentPercent],
+        ['Oda seansı', mine.sessions],
+        ['Kliniğe ödenen (₺)', mine.sharePaid],
+        ['Kliniğe kalan (₺)', mine.shareRemaining]
+      );
+    }
+    downloadCsv(`rapor-${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}.csv`, rows);
+  };
+
   const periodPicker = (
     <>
       <Button variant="outline" size="icon" onClick={goPrevMonth} aria-label="Önceki ay">
@@ -305,6 +349,10 @@ export const Reports = () => {
           Bu ay
         </Button>
       ) : null}
+      <Button variant="outline" onClick={exportCsv} disabled={loading}>
+        <Download />
+        CSV indir
+      </Button>
     </>
   );
 
@@ -318,7 +366,12 @@ export const Reports = () => {
         </Card>
       ) : (
         <>
-          <ClinicEarnings year={selectedYear} month={selectedMonth} monthLabel={MONTHS[selectedMonth]} />
+          <ClinicEarnings
+            year={selectedYear}
+            month={selectedMonth}
+            monthLabel={MONTHS[selectedMonth]}
+            onReport={setClinicReport}
+          />
           <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Özet">
             <StatCard
               icon={CalendarCheck2}
