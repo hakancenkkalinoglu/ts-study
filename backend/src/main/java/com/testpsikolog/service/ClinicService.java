@@ -11,6 +11,7 @@ import com.testpsikolog.dto.UpdateClinicRequest;
 import com.testpsikolog.dto.UpdateRoomRequest;
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -113,7 +114,7 @@ public class ClinicService {
         if (clinicIdForUser(userId) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Zaten bir kliniğe bağlısınız.");
         }
-        String code = request == null || request.inviteCode() == null ? "" : request.inviteCode().trim().toUpperCase();
+        String code = request == null || request.inviteCode() == null ? "" : request.inviteCode().trim().toUpperCase(Locale.ROOT);
         if (code.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Davet kodu gerekli.");
         }

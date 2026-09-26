@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -63,7 +64,7 @@ public class InvitationService {
     @Transactional
     public InvitationResponse create(long userId, CreateInvitationRequest request) {
         ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.INVITE_MEMBERS);
-        String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase();
+        String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase(Locale.ROOT);
         if (email.isBlank() || !email.contains("@") || email.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
         }

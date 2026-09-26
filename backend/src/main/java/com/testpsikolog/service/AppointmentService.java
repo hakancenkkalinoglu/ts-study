@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -569,7 +570,7 @@ public class AppointmentService {
         if (status == null || status.isBlank()) {
             return "scheduled";
         }
-        String value = status.trim().toLowerCase();
+        String value = status.trim().toLowerCase(Locale.ROOT);
         if (value.equals("attended") || value.equals("no_show") || value.equals("cancelled")) {
             return value;
         }

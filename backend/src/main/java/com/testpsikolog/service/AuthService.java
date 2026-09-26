@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.springframework.dao.DataAccessException;
@@ -54,10 +55,11 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         validatePassword(request);
-        String loginId = request.loginId();
+        String loginId = normalizeLoginId(request.loginId());
         if (loginId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-posta gerekli.");
         }
+        // Anahtar da küçültülmüş id'den kurulur; yoksa Ali@ / aLi@ diye deneyerek deneme sınırı aşılırdı.
         String throttleKey = LOGIN_THROTTLE_PREFIX + loginId;
         loginThrottle.assertAllowed(throttleKey);
         AuthUser user = findByLogin(loginId);
@@ -78,13 +80,21 @@ public class AuthService {
         return toResponse(user);
     }
 
+    /** E-posta (içinde @ olan) kayıtta küçültülerek saklandığı için girişte de küçültülür; kullanıcı adına dokunulmaz. */
+    private static String normalizeLoginId(String loginId) {
+        if (loginId == null) {
+            return null;
+        }
+        return loginId.contains("@") ? loginId.toLowerCase(Locale.ROOT) : loginId;
+    }
+
     public LoginResponse register(LoginRequest request) {
         validatePassword(request);
         String email = request.loginId();
         if (email == null || !email.contains("@") || email.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
         }
-        email = email.toLowerCase();
+        email = email.toLowerCase(Locale.ROOT);
         if (request.password().length() < 6) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Şifre en az 6 karakter olmalı.");
         }
@@ -129,7 +139,7 @@ public class AuthService {
         if (googleEmail == null || !googleEmail.contains("@") || googleEmail.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Google e-posta alınamadı.");
         }
-        String email = googleEmail.trim().toLowerCase();
+        String email = googleEmail.trim().toLowerCase(Locale.ROOT);
         AuthUser existing = findByLogin(email);
         if (existing != null && existing.id() != null) {
             return toResponse(existing);
@@ -308,7 +318,7 @@ public class AuthService {
             jdbc.update("UPDATE app_users SET displayName = ? WHERE id = ?", name, userId);
         }
         if (request.email() != null) {
-            String email = request.email().trim().toLowerCase();
+            String email = request.email().trim().toLowerCase(Locale.ROOT);
             if (!email.contains("@") || email.length() > 120) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
             }
@@ -352,7 +362,7 @@ public class AuthService {
     }
 
     public void forgotPassword(com.testpsikolog.dto.ForgotPasswordRequest request) {
-        String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase();
+        String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase(Locale.ROOT);
         if (email.isBlank() || !email.contains("@")) {
             return;
         }
@@ -386,7 +396,7 @@ public class AuthService {
         if (request.newPassword().length() < 6) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Şifre en az 6 karakter olmalı.");
         }
-        String email = request.email().trim().toLowerCase();
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
         String throttleKey = RESET_THROTTLE_PREFIX + email;
         loginThrottle.assertAllowed(throttleKey);
         jdbc.update("DELETE FROM password_reset_tokens WHERE expiresAt < ?", java.time.Instant.now().toEpochMilli());
@@ -503,7 +513,7 @@ public class AuthService {
         jdbc.update("DELETE FROM clinic_share_payments WHERE userId = ?", userId);
         jdbc.update("DELETE FROM google_tokens WHERE userId = ?", userId);
         if (email != null) {
-            jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email.toLowerCase());
+            jdbc.update("DELETE FROM password_reset_tokens WHERE email = ?", email.toLowerCase(Locale.ROOT));
         }
         jdbc.update("DELETE FROM app_users WHERE id = ?", userId);
         deleteUploadDirectory(userId);
