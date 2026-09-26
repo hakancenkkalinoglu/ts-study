@@ -12,6 +12,7 @@ import com.testpsikolog.dto.CreateRoomRequest;
 import com.testpsikolog.dto.DeletedResponse;
 import com.testpsikolog.dto.JoinClinicRequest;
 import com.testpsikolog.dto.MessageResponse;
+import com.testpsikolog.dto.MyClinicEarningsResponse;
 import com.testpsikolog.dto.RecordSharePaymentRequest;
 import com.testpsikolog.dto.SetCommissionRequest;
 import com.testpsikolog.dto.SharePaymentResponse;
@@ -65,15 +66,22 @@ public class ClinicController {
     }
 
     @GetMapping("/clinic")
-    public ClinicMineResponse getMine() {
+    public ClinicMineResponse getMine(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        return new ClinicMineResponse(clinicService.getMine(userId));
+        return new ClinicMineResponse(clinicService.getMine(userId, clinicId));
+    }
+
+    /** Kullanıcının üye olduğu tüm klinikler (klinik seçici). Kliniği yoksa boş liste. */
+    @GetMapping("/clinics")
+    public List<ClinicResponse> listMine() {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.listMine(userId);
     }
 
     @GetMapping("/clinic/rooms")
-    public List<ClinicRoomResponse> listRooms() {
+    public List<ClinicRoomResponse> listRooms(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.listRooms(userId);
+        return clinicService.listRooms(userId, clinicId);
     }
 
     @PostMapping("/clinic")
@@ -90,125 +98,172 @@ public class ClinicController {
     }
 
     @PostMapping("/clinic/leave")
-    public MessageResponse leave() {
+    public MessageResponse leave(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        clinicService.leave(userId);
+        clinicService.leave(userId, clinicId);
         return new MessageResponse("Klinikten ayrıldınız.");
     }
 
     @DeleteMapping("/clinic")
-    public DeletedResponse deleteClinic() {
+    public DeletedResponse deleteClinic(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        clinicService.deleteClinic(userId);
+        clinicService.deleteClinic(userId, clinicId);
         return new DeletedResponse(1);
     }
 
     @PutMapping("/clinic")
-    public ClinicResponse rename(@RequestBody UpdateClinicRequest request) {
+    public ClinicResponse rename(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody UpdateClinicRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.rename(userId, request);
+        return clinicService.rename(userId, clinicId, request);
     }
 
     @PostMapping("/clinic/invite/rotate")
-    public ClinicResponse rotateInvite() {
+    public ClinicResponse rotateInvite(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.rotateInvite(userId);
+        return clinicService.rotateInvite(userId, clinicId);
     }
 
     @DeleteMapping("/clinic/members/{memberUserId}")
-    public ClinicResponse kickMember(@PathVariable long memberUserId) {
+    public ClinicResponse kickMember(
+            @PathVariable long memberUserId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId
+    ) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.kickMember(userId, memberUserId);
+        return clinicService.kickMember(userId, clinicId, memberUserId);
     }
 
     @PostMapping("/clinic/transfer")
-    public ClinicResponse transfer(@RequestBody TransferOwnerRequest request) {
+    public ClinicResponse transfer(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody TransferOwnerRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.transferOwnership(userId, request);
+        return clinicService.transferOwnership(userId, clinicId, request);
     }
 
     @GetMapping("/clinic/commissions")
-    public CommissionOverviewResponse commissions() {
+    public CommissionOverviewResponse commissions(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        return commissionService.overview(userId);
+        return commissionService.overview(userId, clinicId);
     }
 
     @PutMapping("/clinic/commissions/default")
-    public CommissionOverviewResponse setDefaultCommission(@RequestBody SetCommissionRequest request) {
+    public CommissionOverviewResponse setDefaultCommission(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody SetCommissionRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return commissionService.setDefault(userId, request);
+        return commissionService.setDefault(userId, clinicId, request);
     }
 
     @PostMapping("/clinic/commissions/apply-all")
-    public CommissionOverviewResponse applyCommissionToAll(@RequestBody SetCommissionRequest request) {
+    public CommissionOverviewResponse applyCommissionToAll(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody SetCommissionRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return commissionService.applyToAll(userId, request);
+        return commissionService.applyToAll(userId, clinicId, request);
     }
 
     @PutMapping("/clinic/commissions/members/{memberUserId}")
     public CommissionOverviewResponse setMemberCommission(
             @PathVariable long memberUserId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
             @RequestBody SetCommissionRequest request
     ) {
         long userId = currentUserService.requireUser().id();
-        return commissionService.setForMember(userId, memberUserId, request);
+        return commissionService.setForMember(userId, clinicId, memberUserId, request);
     }
 
     @GetMapping("/clinic/overview")
     public ClinicOverviewResponse overview(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to
     ) {
         long userId = currentUserService.requireUser().id();
-        return overviewService.overview(userId, from, to);
+        return overviewService.overview(userId, clinicId, from, to);
     }
 
     @GetMapping("/clinic/fee-report")
-    public ClinicFeeReportResponse feeReport(@RequestParam(required = false) String month) {
+    public ClinicFeeReportResponse feeReport(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestParam(required = false) String month
+    ) {
         long userId = currentUserService.requireUser().id();
-        return reportService.feeReport(userId, month);
+        return reportService.feeReport(userId, clinicId, month);
     }
 
     @PostMapping("/clinic/share-payments")
     @ResponseStatus(HttpStatus.CREATED)
-    public SharePaymentResponse recordSharePayment(@RequestBody RecordSharePaymentRequest request) {
+    public SharePaymentResponse recordSharePayment(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody RecordSharePaymentRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return sharePaymentService.record(userId, request);
+        return sharePaymentService.record(userId, clinicId, request);
     }
 
     @DeleteMapping("/clinic/share-payments/{paymentId}")
-    public DeletedResponse deleteSharePayment(@PathVariable long paymentId) {
+    public DeletedResponse deleteSharePayment(
+            @PathVariable long paymentId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId
+    ) {
         long userId = currentUserService.requireUser().id();
-        sharePaymentService.delete(userId, paymentId);
+        sharePaymentService.delete(userId, clinicId, paymentId);
         return new DeletedResponse(1);
     }
 
     @GetMapping("/clinic/my-earnings")
     public ClinicReportResponse myEarnings(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to
     ) {
         long userId = currentUserService.requireUser().id();
-        return reportService.myEarnings(userId, from, to);
+        return reportService.myEarnings(userId, clinicId, from, to);
+    }
+
+    /** Psikoloğun her kliniği için ayrı kazanç raporu (toplamı arayüz alır, oranlar klinik başına farklı). */
+    @GetMapping("/clinic/my-earnings-all")
+    public List<MyClinicEarningsResponse> myEarningsAll(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
+    ) {
+        long userId = currentUserService.requireUser().id();
+        return reportService.myEarningsAll(userId, from, to);
     }
 
     @PostMapping("/clinic/rooms")
     @ResponseStatus(HttpStatus.CREATED)
-    public ClinicRoomResponse addRoom(@RequestBody CreateRoomRequest request) {
+    public ClinicRoomResponse addRoom(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody CreateRoomRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.addRoom(userId, request);
+        return clinicService.addRoom(userId, clinicId, request);
     }
 
     @PutMapping("/clinic/rooms/{roomId}")
-    public ClinicRoomResponse updateRoom(@PathVariable long roomId, @RequestBody UpdateRoomRequest request) {
+    public ClinicRoomResponse updateRoom(
+            @PathVariable long roomId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody UpdateRoomRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return clinicService.updateRoom(userId, roomId, request);
+        return clinicService.updateRoom(userId, clinicId, roomId, request);
     }
 
     @DeleteMapping("/clinic/rooms/{roomId}")
-    public DeletedResponse deleteRoom(@PathVariable long roomId) {
+    public DeletedResponse deleteRoom(
+            @PathVariable long roomId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId
+    ) {
         long userId = currentUserService.requireUser().id();
-        clinicService.deleteRoom(userId, roomId);
+        clinicService.deleteRoom(userId, clinicId, roomId);
         return new DeletedResponse(1);
     }
 }

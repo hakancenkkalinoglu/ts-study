@@ -31,8 +31,8 @@ public class ClinicOverviewService {
         this.clinicService = clinicService;
     }
 
-    public ClinicOverviewResponse overview(long userId, String from, String to) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.VIEW_CLINIC_SCHEDULE);
+    public ClinicOverviewResponse overview(long userId, Long clinicId, String from, String to) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.VIEW_CLINIC_SCHEDULE);
         String start = from == null || from.isBlank() ? monthStart() : ScheduleInputs.requireDate(from);
         String end = to == null || to.isBlank() ? monthEnd() : ScheduleInputs.requireDate(to);
 

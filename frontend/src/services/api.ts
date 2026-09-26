@@ -16,6 +16,7 @@ import type {
   ClinicFeeReport,
   ClinicOverview,
   ClinicReport,
+  MyClinicEarnings,
   CommissionOverview,
   SharePayment,
   Invitation,
@@ -53,6 +54,25 @@ const isPublicAuthUrl = (url?: string) => {
   );
 };
 
+// Çoklu klinik (K6): kullanıcının seçtiği aktif klinik. Klinik uçlarına `clinicId` olarak kendiliğinden eklenir,
+// böylece tek klinikli kullanıcı için hiçbir şey değişmez. Çağıran açıkça `params.clinicId` verirse o kullanılır
+// (örneğin danışanın kliniğinin odaları).
+let activeClinicId: number | null = null;
+
+export const setActiveClinicId = (id: number | null): void => {
+  activeClinicId = id;
+};
+
+export const getActiveClinicId = (): number | null => activeClinicId;
+
+const takesActiveClinic = (config: { url?: string; method?: string; params?: Record<string, unknown> }): boolean => {
+  const path = String(config.url || '');
+  if (path === '/clinics' || path === '/clinic/join' || path === '/clinic/my-earnings-all') return false;
+  if (path === '/clinic' && String(config.method || 'get').toLowerCase() === 'post') return false;
+  if (path === '/clinic' || path.startsWith('/clinic/')) return true;
+  return path === '/appointments' && config.params?.scope === 'clinic';
+};
+
 api.interceptors.request.use((config) => {
   if (isPublicAuthUrl(config.url)) {
     delete config.headers.Authorization;
@@ -60,6 +80,9 @@ api.interceptors.request.use((config) => {
   }
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (activeClinicId != null && config.params?.clinicId === undefined && takesActiveClinic(config)) {
+    config.params = { ...(config.params ?? {}), clinicId: activeClinicId };
+  }
   return config;
 });
 
@@ -374,14 +397,23 @@ export const deleteClinic = async (): Promise<void> => {
   await api.delete('/clinic');
 };
 
-export const getClinicRooms = async (): Promise<ClinicRoom[]> => {
-  const response = await api.get<ClinicRoom[]>('/clinic/rooms');
+/** Kullanıcının üye olduğu tüm klinikler (klinik seçici için). */
+export const getMyClinics = async (): Promise<Clinic[]> => {
+  const response = await api.get<Clinic[]>('/clinics');
+  return response.data;
+};
+
+/** clinicId verilmezse aktif kliniğin odaları; danışanın kliniğinin odaları için danışanın clinicId'si verilir. */
+export const getClinicRooms = async (clinicId?: number): Promise<ClinicRoom[]> => {
+  const response = await api.get<ClinicRoom[]>('/clinic/rooms', { params: clinicId ? { clinicId } : {} });
   return response.data;
 };
 
 export type RoomAvailability = ClinicRoom & { busy: boolean };
 
+/** clinicId: odaların hangi kliniğe ait olduğu (danışanın kliniği). Oda doluluğu yalnızca o kliniğin odalarını döndürür. */
 export const getRoomAvailability = async (params: {
+  clinicId: number;
   date: string;
   time: string;
   duration: number;
@@ -511,6 +543,12 @@ export const getClinicOverview = async (from: string, to: string): Promise<Clini
 export const getMyEarnings = async (from: string, to: string): Promise<ClinicReport | null> => {
   const response = await api.get<ClinicReport | ''>('/clinic/my-earnings', { params: { from, to } });
   return response.data === '' ? null : response.data;
+};
+
+/** Psikoloğun her kliniği için ayrı kazanç raporu. Oranlar klinik başına farklı olduğundan toplamı arayüz alır. */
+export const getMyEarningsAll = async (from: string, to: string): Promise<MyClinicEarnings[]> => {
+  const response = await api.get<MyClinicEarnings[]>('/clinic/my-earnings-all', { params: { from, to } });
+  return response.data;
 };
 
 export const getExpiringPackages = async (): Promise<ExpiringPackage[]> => {

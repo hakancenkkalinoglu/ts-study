@@ -36,6 +36,7 @@ import { ClinicCommissions } from '../components/ClinicCommissions';
 import { ClinicInvitations } from '../components/ClinicInvitations';
 import { useConfirm } from '../contexts/ConfirmDialog';
 import { useToast } from '../contexts/ToastContext';
+import { useClinics } from '../contexts/ClinicContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,6 +60,8 @@ const ColorInput = ({ value, onChange, label }: { value: string; onChange: (valu
 export const ClinicPage = () => {
   const { confirm } = useConfirm();
   const { showToast } = useToast();
+  const { reload: reloadClinics } = useClinics();
+  const [showAdd, setShowAdd] = useState(false);
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +106,9 @@ export const ClinicPage = () => {
     setError(null);
     setSaving(true);
     try {
-      setClinic(await createClinic(clinicName));
+      const created = await createClinic(clinicName);
+      setClinic(created);
+      await reloadClinics(created.id);
       setClinicName('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Klinik oluşturulamadı.'));
@@ -117,7 +122,9 @@ export const ClinicPage = () => {
     setError(null);
     setSaving(true);
     try {
-      setClinic(await joinClinic(inviteCode));
+      const joined = await joinClinic(inviteCode);
+      setClinic(joined);
+      await reloadClinics(joined.id);
       setInviteCode('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Kliniğe katılınamadı.'));
@@ -155,7 +162,7 @@ export const ClinicPage = () => {
   const handleLeave = async () => {
     const ok = await confirm({
       title: 'Klinikten ayrıl',
-      message: 'Klinikten ayrılmak istiyor musunuz? Gelecek randevularınızdaki oda bilgisi kaldırılır.',
+      message: 'Klinikten ayrılmak istiyor musunuz? Bu klinikteki danışanlarınız sizde kalır ve kişisel olur; gelecek randevularınızdaki klinik ve oda bilgisi kaldırılır.',
       confirmLabel: 'Ayrıl',
       danger: true,
     });
@@ -163,6 +170,7 @@ export const ClinicPage = () => {
     setError(null);
     try {
       await leaveClinic();
+      await reloadClinics();
       setClinic(null);
     } catch (err) {
       setError(apiErrorMessage(err, 'Ayrılamadınız.'));
@@ -180,6 +188,7 @@ export const ClinicPage = () => {
     setError(null);
     try {
       await deleteClinic();
+      await reloadClinics();
       setClinic(null);
     } catch (err) {
       setError(apiErrorMessage(err, 'Klinik silinemedi.'));
@@ -275,6 +284,59 @@ export const ClinicPage = () => {
     }
   };
 
+  const setupForms = (
+    <div className="grid gap-6 md:grid-cols-2">
+      <Card>
+        <form onSubmit={handleCreate} className="flex h-full flex-col gap-4 p-5">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-primary">
+            <Building2 className="size-5" />
+          </span>
+          <div>
+            <h2 className="m-0 text-base font-semibold">Klinik oluşturun</h2>
+            <p className="m-0 mt-1 text-sm text-muted-foreground">Kurucu siz olursunuz; iki oda hazır gelir.</p>
+          </div>
+          <Field label="Klinik adı" htmlFor="clinic-name">
+            <Input
+              id="clinic-name"
+              value={clinicName}
+              onChange={(e) => setClinicName(e.target.value)}
+              placeholder="Örn. Kadıköy Muayenehane"
+              required
+            />
+          </Field>
+          <Button type="submit" disabled={saving} className="mt-auto self-start">
+            <Plus />
+            Oluştur
+          </Button>
+        </form>
+      </Card>
+      <Card>
+        <form onSubmit={handleJoin} className="flex h-full flex-col gap-4 p-5">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-primary">
+            <KeyRound className="size-5" />
+          </span>
+          <div>
+            <h2 className="m-0 text-base font-semibold">Davet koduyla katılın</h2>
+            <p className="m-0 mt-1 text-sm text-muted-foreground">Kodu kliniğin kurucusundan alabilirsiniz.</p>
+          </div>
+          <Field label="Davet kodu" htmlFor="invite-code">
+            <Input
+              id="invite-code"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              placeholder="ABC123"
+              className="font-mono tracking-widest uppercase"
+              required
+            />
+          </Field>
+          <Button type="submit" variant="outline" disabled={saving} className="mt-auto self-start">
+            Katıl
+          </Button>
+        </form>
+      </Card>
+    </div>
+  );
+
   if (loading) {
     return (
       <PageContainer>
@@ -294,56 +356,7 @@ export const ClinicPage = () => {
           description="Ortak ofiste odaları ve meslektaş takvimini görmek için bir klinik oluşturun veya davet koduyla katılın. Notlarınız size özel kalır."
         />
         {error ? <div className="mb-4"><FormError>{error}</FormError></div> : null}
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <form onSubmit={handleCreate} className="flex h-full flex-col gap-4 p-5">
-              <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-primary">
-                <Building2 className="size-5" />
-              </span>
-              <div>
-                <h2 className="m-0 text-base font-semibold">Klinik oluşturun</h2>
-                <p className="m-0 mt-1 text-sm text-muted-foreground">Kurucu siz olursunuz; iki oda hazır gelir.</p>
-              </div>
-              <Field label="Klinik adı" htmlFor="clinic-name">
-                <Input
-                  id="clinic-name"
-                  value={clinicName}
-                  onChange={(e) => setClinicName(e.target.value)}
-                  placeholder="Örn. Kadıköy Muayenehane"
-                  required
-                />
-              </Field>
-              <Button type="submit" disabled={saving} className="mt-auto self-start">
-                <Plus />
-                Oluştur
-              </Button>
-            </form>
-          </Card>
-          <Card>
-            <form onSubmit={handleJoin} className="flex h-full flex-col gap-4 p-5">
-              <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-primary">
-                <KeyRound className="size-5" />
-              </span>
-              <div>
-                <h2 className="m-0 text-base font-semibold">Davet koduyla katılın</h2>
-                <p className="m-0 mt-1 text-sm text-muted-foreground">Kodu kliniğin kurucusundan alabilirsiniz.</p>
-              </div>
-              <Field label="Davet kodu" htmlFor="invite-code">
-                <Input
-                  id="invite-code"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                  placeholder="ABC123"
-                  className="font-mono tracking-widest uppercase"
-                  required
-                />
-              </Field>
-              <Button type="submit" variant="outline" disabled={saving} className="mt-auto self-start">
-                Katıl
-              </Button>
-            </form>
-          </Card>
-        </div>
+        {setupForms}
       </PageContainer>
     );
   }
@@ -520,6 +533,22 @@ export const ClinicPage = () => {
         </div>
       ) : null}
 
+      <div className="mt-6">
+        {showAdd ? (
+          <>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Başka bir klinik ekleyince üstte klinik seçici çıkar. Klinikler birbirinin verisini görmez; takviminiz ortak kalır.
+            </p>
+            {setupForms}
+          </>
+        ) : (
+          <Button variant="outline" onClick={() => setShowAdd(true)}>
+            <Plus />
+            Başka bir klinik ekle
+          </Button>
+        )}
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         {canManageClinic ? (
           <Card>
@@ -545,7 +574,7 @@ export const ClinicPage = () => {
               <p className="m-0 mt-1 text-sm text-muted-foreground">
                 {isOwner
                   ? 'Klinik, odalar ve üyelikler silinir. Randevular kalır.'
-                  : 'Klinik takvimini ve odaları artık göremezsiniz.'}
+                  : 'Klinik takvimini ve odaları artık göremezsiniz. Danışanlarınız sizde kalır.'}
               </p>
             </div>
             <Button variant="destructive" onClick={isOwner ? handleDeleteClinic : handleLeave}>

@@ -11,6 +11,8 @@ export type Client = {
   updatedAt: string;
   createdByName?: string | null;
   updatedByName?: string | null;
+  /** Danışanın kliniği (boş = kişisel, klinik dışı). Randevunun kliniği buradan gelir. */
+  clinicId?: number | null;
 };
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -37,6 +39,8 @@ export type CreateClientInput = {
   phone?: string;
   emergencyName?: string;
   emergencyPhone?: string;
+  /** Boş: tek kliniği olan psikologda o klinik. 0: kişisel (klinik yok). */
+  clinicId?: number;
 };
 
 export type AppointmentStatus = 'scheduled' | 'attended' | 'no_show' | 'cancelled';
@@ -290,7 +294,20 @@ export type ClinicReport = {
   therapists: TherapistReport[];
 };
 
-export const THERAPIST_COLORS = ['#7a4a2b', '#3f7f6e', '#a86a2f', '#6d5a8c', '#4f6f8f', '#9a4f4f'];
+/** Psikoloğun tek bir klinikteki kazanç raporu; "tüm klinikler" görünümü bunların listesidir. */
+export type MyClinicEarnings = {
+  clinicId: number;
+  clinicName: string;
+  report: ClinicReport;
+};
+
+/** Klinik etiketi rengi (takvimde ve listelerde). Kliniğin id'sinden sabit üretilir. */
+export const clinicColor = (clinicId?: number | null): string | undefined => {
+  if (clinicId == null) return undefined;
+  return THERAPIST_COLORS[Math.abs(clinicId) % THERAPIST_COLORS.length];
+};
+
+export const THERAPIST_COLORS =['#7a4a2b', '#3f7f6e', '#a86a2f', '#6d5a8c', '#4f6f8f', '#9a4f4f'];
 
 export const therapistColor = (userId?: number | null): string | undefined => {
   if (userId == null) return undefined;

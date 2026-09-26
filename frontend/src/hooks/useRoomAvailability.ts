@@ -1,20 +1,25 @@
 import { useEffect, useState } from 'react';
 import { getRoomAvailability, type RoomAvailability } from '../services/api';
 
-/** Seçilen tarih, saat ve sürede kliniğin hangi odalarının dolu olduğunu getirir. Klinik/oda yoksa boş liste. */
+/**
+ * Seçilen tarih, saat ve sürede danışanın kliniğinin hangi odalarının dolu olduğunu getirir.
+ * Klinik (kişisel danışan) ya da oda yoksa boş liste.
+ */
 export const useRoomAvailability = (
   active: boolean,
+  clinicId: number | null | undefined,
   date: string,
   time: string,
   duration: number,
   excludeAppointmentId?: number
 ) => {
   const [rooms, setRooms] = useState<RoomAvailability[]>([]);
+  const enabled = active && Boolean(clinicId) && Boolean(date) && Boolean(time);
 
   useEffect(() => {
-    if (!active || !date || !time) return;
+    if (!enabled || !clinicId) return;
     let cancelled = false;
-    getRoomAvailability({ date, time, duration, excludeAppointmentId })
+    getRoomAvailability({ clinicId, date, time, duration, excludeAppointmentId })
       .then((data) => {
         if (!cancelled) setRooms(data);
       })
@@ -24,7 +29,7 @@ export const useRoomAvailability = (
     return () => {
       cancelled = true;
     };
-  }, [active, date, time, duration, excludeAppointmentId]);
+  }, [enabled, clinicId, date, time, duration, excludeAppointmentId]);
 
-  return rooms;
+  return enabled ? rooms : [];
 };

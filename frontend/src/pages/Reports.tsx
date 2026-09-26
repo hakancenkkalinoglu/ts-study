@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Banknote, CalendarCheck2, ChevronLeft, ChevronRight, Download, Hourglass, TrendingUp } from 'lucide-react';
 import { getAllAppointments } from '../services/api';
-import type { AppointmentWithClient, ClinicReport } from '../types';
+import type { AppointmentWithClient, MyClinicEarnings } from '../types';
 import { appointmentAmount, appointmentPaid, appointmentStatus, appointmentStatusLabel } from '../types';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ClinicEarnings } from '../components/ClinicEarnings';
+import { useClinics } from '../contexts/ClinicContext';
 import { downloadCsv, type CsvCell } from '../utils/csv';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,17 +73,20 @@ const BreakdownList = ({
 export const Reports = () => {
   const navigate = useNavigate();
   const now = new Date();
-  const [appointments, setAppointments] = useState<AppointmentWithClient[]>([]);
+  const { clinics } = useClinics();
+  const [allAppointments, setAllAppointments] = useState<AppointmentWithClient[]>([]);
+  // 'all': tüm klinikler (ve kişisel) toplamı, sayı: yalnızca o klinik, 0: klinik dışı (kişisel) danışanlar
+  const [clinicFilter, setClinicFilter] = useState<'all' | number>('all');
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
-  const [clinicReport, setClinicReport] = useState<ClinicReport | null>(null);
+  const [clinicEntries, setClinicEntries] = useState<MyClinicEarnings[]>([]);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getAllAppointments();
-      setAppointments(data);
+      setAllAppointments(data);
     } catch (error) {
       console.error('Error loading reports:', error);
     } finally {
@@ -107,6 +111,15 @@ export const Reports = () => {
       document.removeEventListener('visibilitychange', refresh);
     };
   }, [loadData]);
+
+  const appointments =
+    clinicFilter === 'all' ? allAppointments : allAppointments.filter((a) => (a.clinicId ?? 0) === clinicFilter);
+  const clinicFilterLabel =
+    clinicFilter === 'all'
+      ? 'Tüm klinikler'
+      : clinicFilter === 0
+        ? 'Kişisel (klinik dışı)'
+        : (clinics.find((clinic) => clinic.id === clinicFilter)?.name ?? '');
 
   const yearsFromData = appointments.map((a) => parseAptDate(a.appointmentDate).getFullYear());
   const minYear = yearsFromData.length
@@ -266,10 +279,10 @@ export const Reports = () => {
 
   // Danışan adı içeren tablolar (danışan bazlı seans ve borç) bilerek dosyaya girmez: yalnızca toplamlar.
   const exportCsv = () => {
-    const mine = clinicReport?.therapists[0];
     const rows: CsvCell[][] = [
       ['Rapor', 'Aylık seans ve tahsilat raporu'],
       ['Dönem', monthLabel],
+      ...(clinics.length > 0 ? [['Klinik', clinicFilterLabel] as CsvCell[]] : []),
       ['Oluşturulma', asOfText],
       [],
       ['Seans durumu (iptaller dahil tüm randevular)'],
@@ -290,10 +303,15 @@ export const Reports = () => {
       [`${selectedYear} tahsilat (₺)`, earnedThisYear],
       [`${selectedYear} bekleyen (₺)`, pendingYear],
     ];
-    if (mine) {
+    // Klinik payı her klinik için kendi oranıyla ayrı yazılır; birden fazla klinikte altına toplam eklenir.
+    const shares = clinicEntries.flatMap((entry) => {
+      const mine = entry.report.therapists[0];
+      return mine ? [{ name: entry.clinicName, mine }] : [];
+    });
+    for (const { name, mine } of shares) {
       rows.push(
         [],
-        ['Klinik payı'],
+        [clinics.length > 1 ? `Klinik payı: ${name}` : 'Klinik payı'],
         ['Net kazanç (₺)', mine.netAmount],
         ['Tahsilat (₺)', mine.paidAmount],
         ['Oda payı, kliniğe (₺)', mine.clinicShare],
@@ -303,11 +321,41 @@ export const Reports = () => {
         ['Kliniğe kalan (₺)', mine.shareRemaining]
       );
     }
+    if (shares.length > 1) {
+      const sum = (pick: (m: (typeof shares)[number]['mine']) => number) =>
+        shares.reduce((total, { mine }) => total + pick(mine), 0);
+      rows.push(
+        [],
+        ['Klinik payı: tüm klinikler toplamı'],
+        ['Net kazanç (₺)', sum((m) => m.netAmount)],
+        ['Tahsilat (₺)', sum((m) => m.paidAmount)],
+        ['Oda payı, kliniğe (₺)', sum((m) => m.clinicShare)],
+        ['Oda seansı', sum((m) => m.sessions)],
+        ['Kliniğe ödenen (₺)', sum((m) => m.sharePaid)],
+        ['Kliniğe kalan (₺)', sum((m) => m.shareRemaining)]
+      );
+    }
     downloadCsv(`rapor-${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}.csv`, rows);
   };
 
   const periodPicker = (
     <>
+      {clinics.length > 0 ? (
+        <NativeSelect
+          className="w-auto"
+          value={clinicFilter}
+          onChange={(e) => setClinicFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          aria-label="Klinik"
+        >
+          <option value="all">Tüm klinikler</option>
+          {clinics.map((clinic) => (
+            <option key={clinic.id} value={clinic.id}>
+              {clinic.name}
+            </option>
+          ))}
+          <option value={0}>Kişisel (klinik dışı)</option>
+        </NativeSelect>
+      ) : null}
       <Button variant="outline" size="icon" onClick={goPrevMonth} aria-label="Önceki ay">
         <ChevronLeft />
       </Button>
@@ -370,7 +418,8 @@ export const Reports = () => {
             year={selectedYear}
             month={selectedMonth}
             monthLabel={MONTHS[selectedMonth]}
-            onReport={setClinicReport}
+            filter={clinicFilter}
+            onReport={setClinicEntries}
           />
           <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Özet">
             <StatCard

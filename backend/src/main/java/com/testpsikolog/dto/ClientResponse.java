@@ -12,6 +12,7 @@ public record ClientResponse(
         String createdAt,
         String updatedAt,
         String createdByName,
-        String updatedByName
+        String updatedByName,
+        Long clinicId
 ) {
 }

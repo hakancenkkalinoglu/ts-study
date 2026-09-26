@@ -5,6 +5,7 @@ import { getClients, deleteClient, apiErrorMessage } from '../services/api';
 import type { Client } from '../types';
 import { AddClientModal } from '../components/AddClientModal';
 import { useToast } from '../contexts/ToastContext';
+import { useClinics } from '../contexts/ClinicContext';
 import { useConfirm } from '../contexts/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -27,6 +28,8 @@ export const ClientsList = () => {
   const [searchDebounced, setSearchDebounced] = useState('');
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { clinics } = useClinics();
+  const clinicLabel = (client: Client) => clinics.find((item) => item.id === client.clinicId)?.name ?? 'Kişisel';
   const { confirm } = useConfirm();
 
   useEffect(() => {
@@ -164,7 +167,10 @@ export const ClientsList = () => {
                         <Avatar name={client.name} />
                         <div className="min-w-0">
                           <div className="truncate font-medium">{client.name || 'İsimsiz'}</div>
-                          <div className="truncate text-[13px] text-muted-foreground">{client.email || 'E-posta yok'}</div>
+                          <div className="truncate text-[13px] text-muted-foreground">
+                            {client.email || 'E-posta yok'}
+                            {clinics.length > 1 ? ` · ${clinicLabel(client)}` : ''}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -197,6 +203,7 @@ export const ClientsList = () => {
                         ) : (
                           client.email || 'İletişim bilgisi yok'
                         )}
+                        {clinics.length > 1 ? ` · ${clinicLabel(client)}` : ''}
                       </span>
                     </span>
                     <ChevronRight className="size-4 text-muted-foreground" />

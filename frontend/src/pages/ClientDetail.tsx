@@ -56,6 +56,7 @@ import { ClientInventories } from '../components/ClientInventories';
 import { ClientRisk } from '../components/ClientRisk';
 import { istanbulTodayYmd } from '../utils/dates';
 import { Badge } from '@/components/ui/badge';
+import { useClinics } from '../contexts/ClinicContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
@@ -110,6 +111,7 @@ const emptyClientForm = () => ({
   phone: '',
   emergencyName: '',
   emergencyPhone: '',
+  clinicId: 0,
 });
 
 const emptyNoteForm = () => ({ title: '', content: '', noteDate: istanbulTodayYmd() });
@@ -125,6 +127,7 @@ export const ClientDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { clinics } = useClinics();
   const { confirm } = useConfirm();
   const [client, setClient] = useState<Client | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -157,6 +160,7 @@ export const ClientDetail = () => {
       phone: foundClient.phone || '',
       emergencyName: foundClient.emergencyName || '',
       emergencyPhone: foundClient.emergencyPhone || '',
+      clinicId: foundClient.clinicId ?? 0,
     });
   };
 
@@ -191,11 +195,17 @@ export const ClientDetail = () => {
     if (id) loadClientData();
   }, [id, loadClientData]);
 
+  // Oda seçimi danışanın kliniğinin odalarıyla sınırlı (kişisel danışanda oda yok).
+  const clientClinicId = client?.clinicId ?? null;
   useEffect(() => {
-    getClinicRooms()
+    if (!clientClinicId) {
+      setRooms([]);
+      return;
+    }
+    getClinicRooms(clientClinicId)
       .then(setRooms)
       .catch(() => setRooms([]));
-  }, []);
+  }, [clientClinicId]);
 
   const openNewAppointment = () => {
     setAppointmentForm(emptyAppointmentForm());
@@ -440,6 +450,7 @@ export const ClientDetail = () => {
         phone: clientForm.phone,
         emergencyName: clientForm.emergencyName,
         emergencyPhone: clientForm.emergencyPhone,
+        clinicId: clinics.length > 0 ? clientForm.clinicId : undefined,
       });
       setEditingClient(false);
       showToast('Danışan bilgileri kaydedildi.');
@@ -631,7 +642,14 @@ export const ClientDetail = () => {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
           <Avatar name={client.name} className="size-14 text-lg" />
           <div className="min-w-0 flex-1">
-            <h1 className="m-0 text-2xl font-semibold tracking-tight">{client.name || 'İsimsiz danışan'}</h1>
+            <h1 className="m-0 flex flex-wrap items-center gap-3 text-2xl font-semibold tracking-tight">
+              {client.name || 'İsimsiz danışan'}
+              {clinics.length > 0 ? (
+                <Badge variant="neutral">
+                  {clinics.find((item) => item.id === client.clinicId)?.name ?? 'Kişisel'}
+                </Badge>
+              ) : null}
+            </h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
               {client.phone ? (
                 <a href={`tel:${client.phone}`} className="inline-flex items-center gap-1.5 text-foreground no-underline hover:underline">
@@ -914,6 +932,26 @@ export const ClientDetail = () => {
               <Field label="Ad soyad *" htmlFor="client-name">
                 <Input id="client-name" required value={clientForm.name} onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })} />
               </Field>
+              {clinics.length > 0 ? (
+                <Field
+                  label="Klinik"
+                  htmlFor="client-clinic"
+                  hint="Değişirse gelecekteki randevular yeni kliniğe geçer, geçmiş randevular eski klinikte kalır."
+                >
+                  <NativeSelect
+                    id="client-clinic"
+                    value={clientForm.clinicId}
+                    onChange={(e) => setClientForm({ ...clientForm, clinicId: Number(e.target.value) })}
+                  >
+                    {clinics.map((clinic) => (
+                      <option key={clinic.id} value={clinic.id}>
+                        {clinic.name}
+                      </option>
+                    ))}
+                    <option value={0}>Kişisel (klinik yok)</option>
+                  </NativeSelect>
+                </Field>
+              ) : null}
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="E-posta" htmlFor="client-email">
                   <Input id="client-email" type="email" value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} />

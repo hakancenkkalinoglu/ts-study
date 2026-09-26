@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { apiErrorMessage, createClient } from '../services/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
-import { Field, FormError, Input } from '@/components/ui/input';
+import { Field, FormError, Input, NativeSelect } from '@/components/ui/input';
+import { useClinics } from '../contexts/ClinicContext';
 
 interface AddClientModalProps {
   isOpen: boolean;
@@ -22,7 +23,14 @@ const emptyForm = () => ({
 });
 
 export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalProps) => {
+  const { clinics, activeClinic } = useClinics();
   const [formData, setFormData] = useState(emptyForm);
+  // Danışan tek kliniğe ait; 0 = kişisel (klinik yok). Kliniği olmayan psikolog bu alanı görmez.
+  const [clinicId, setClinicId] = useState<number>(activeClinic?.id ?? 0);
+
+  useEffect(() => {
+    if (isOpen) setClinicId(activeClinic?.id ?? 0);
+  }, [isOpen, activeClinic?.id]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +51,7 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
         phone: formData.phone.trim() || undefined,
         emergencyName: formData.emergencyName.trim() || undefined,
         emergencyPhone: formData.emergencyPhone.trim() || undefined,
+        clinicId: clinics.length > 0 ? clinicId : undefined,
       });
       onSuccess();
       setFormData(emptyForm());
@@ -65,6 +74,22 @@ export const AddClientModal = ({ isOpen, onClose, onSuccess }: AddClientModalPro
             <Field label="Ad soyad *" htmlFor="client-name">
               <Input id="client-name" required value={formData.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
             </Field>
+            {clinics.length > 0 ? (
+              <Field
+                label="Klinik"
+                htmlFor="client-clinic"
+                hint="Danışan tek kliniğe ait olur; randevuları o klinikte görünür. Sonradan değiştirilebilir."
+              >
+                <NativeSelect id="client-clinic" value={clinicId} onChange={(e) => setClinicId(Number(e.target.value))}>
+                  {clinics.map((clinic) => (
+                    <option key={clinic.id} value={clinic.id}>
+                      {clinic.name}
+                    </option>
+                  ))}
+                  <option value={0}>Kişisel (klinik yok)</option>
+                </NativeSelect>
+              </Field>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="E-posta" htmlFor="client-email">
                 <Input id="client-email" type="email" value={formData.email} onChange={(e) => update({ email: e.target.value })} />

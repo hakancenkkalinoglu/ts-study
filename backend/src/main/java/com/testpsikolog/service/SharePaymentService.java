@@ -28,8 +28,8 @@ public class SharePaymentService {
         this.clinicService = clinicService;
     }
 
-    public SharePaymentResponse record(long userId, RecordSharePaymentRequest request) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.MANAGE_PAYMENTS);
+    public SharePaymentResponse record(long userId, Long clinicId, RecordSharePaymentRequest request) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.MANAGE_PAYMENTS);
         if (request == null || request.userId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Psikolog seçin.");
         }
@@ -65,8 +65,8 @@ public class SharePaymentService {
         return new SharePaymentResponse(id == null ? 0L : id, amount, paidOn, note);
     }
 
-    public void delete(long userId, long paymentId) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.MANAGE_PAYMENTS);
+    public void delete(long userId, Long clinicId, long paymentId) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.MANAGE_PAYMENTS);
         int deleted = jdbc.update(
                 "DELETE FROM clinic_share_payments WHERE id = ? AND clinicId = ?",
                 paymentId,

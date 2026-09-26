@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,21 +34,27 @@ public class InvitationController {
 
     @PostMapping("/clinic/invitations")
     @ResponseStatus(HttpStatus.CREATED)
-    public InvitationResponse create(@RequestBody CreateInvitationRequest request) {
+    public InvitationResponse create(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody CreateInvitationRequest request
+    ) {
         long userId = currentUserService.requireUser().id();
-        return invitationService.create(userId, request);
+        return invitationService.create(userId, clinicId, request);
     }
 
     @GetMapping("/clinic/invitations")
-    public List<InvitationResponse> list() {
+    public List<InvitationResponse> list(@RequestParam(value = "clinicId", required = false) Long clinicId) {
         long userId = currentUserService.requireUser().id();
-        return invitationService.list(userId);
+        return invitationService.list(userId, clinicId);
     }
 
     @DeleteMapping("/clinic/invitations/{invitationId}")
-    public DeletedResponse revoke(@PathVariable long invitationId) {
+    public DeletedResponse revoke(
+            @PathVariable long invitationId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId
+    ) {
         long userId = currentUserService.requireUser().id();
-        invitationService.revoke(userId, invitationId);
+        invitationService.revoke(userId, clinicId, invitationId);
         return new DeletedResponse(1);
     }
 

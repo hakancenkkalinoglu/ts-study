@@ -62,15 +62,15 @@ public class InvitationService {
     }
 
     @Transactional
-    public InvitationResponse create(long userId, CreateInvitationRequest request) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.INVITE_MEMBERS);
+    public InvitationResponse create(long userId, Long clinicId, CreateInvitationRequest request) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.INVITE_MEMBERS);
         String email = request == null || request.email() == null ? "" : request.email().trim().toLowerCase(Locale.ROOT);
         if (email.isBlank() || !email.contains("@") || email.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
         }
         AuthUser existing = authService.findByLogin(email);
-        if (existing != null && existing.id() != null && clinicService.clinicIdForUser(existing.id()) != null) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu kişi zaten bir kliniğe bağlı.");
+        if (existing != null && existing.id() != null && clinicService.isMember(clinic.id(), existing.id())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu kişi zaten bu kliniğin üyesi.");
         }
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
@@ -94,8 +94,8 @@ public class InvitationService {
         return new InvitationResponse(id == null ? 0L : id, email, expiresAt, base + "/invite/" + token);
     }
 
-    public List<InvitationResponse> list(long userId) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.INVITE_MEMBERS);
+    public List<InvitationResponse> list(long userId, Long clinicId) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.INVITE_MEMBERS);
         return jdbc.query(
                 "SELECT id, email, expiresAt FROM clinic_invitations WHERE clinicId = ? AND expiresAt >= ? ORDER BY id DESC",
                 LIST_MAPPER,
@@ -104,8 +104,8 @@ public class InvitationService {
         );
     }
 
-    public void revoke(long userId, long invitationId) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.INVITE_MEMBERS);
+    public void revoke(long userId, Long clinicId, long invitationId) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.INVITE_MEMBERS);
         int deleted = jdbc.update(
                 "DELETE FROM clinic_invitations WHERE id = ? AND clinicId = ?",
                 invitationId,

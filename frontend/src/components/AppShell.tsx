@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  Check,
+  ChevronsUpDown,
   Building2,
   CalendarDays,
   LayoutDashboard,
@@ -15,9 +17,10 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
-import { clearStoredToken, getMyClinic, getProfile } from '@/services/api';
+import { clearStoredToken, getProfile } from '@/services/api';
 import { clinicCan } from '@/types';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useClinics } from '@/contexts/ClinicContext';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -58,6 +61,38 @@ const initialsOf = (name: string) =>
     .map((part) => part[0]?.toLocaleUpperCase('tr-TR'))
     .join('');
 
+/** Aktif klinik seçici. Yalnızca 2 ya da daha fazla kliniği olan kullanıcıya görünür. */
+const ClinicSwitcher = ({ compact = false }: { compact?: boolean }) => {
+  const { clinics, activeClinic, selectClinic } = useClinics();
+  if (clinics.length < 2 || !activeClinic) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Klinik değiştir"
+          className={cn(
+            'flex cursor-pointer items-center gap-2 rounded-lg border border-solid border-input bg-card text-left text-foreground [font-family:inherit] hover:bg-accent',
+            compact ? 'h-8 max-w-[11rem] px-2 text-xs' : 'w-full px-3 py-2 text-sm'
+          )}
+        >
+          <Building2 className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate font-medium">{activeClinic.name}</span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {clinics.map((clinic) => (
+          <DropdownMenuItem key={clinic.id} onSelect={() => selectClinic(clinic.id)}>
+            {clinic.id === activeClinic.id ? <Check /> : <span className="size-4" />}
+            {clinic.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 const SidebarLink = ({ item }: { item: NavItem }) => (
   <NavLink
     to={item.to}
@@ -83,9 +118,11 @@ const SidebarLink = ({ item }: { item: NavItem }) => (
 export const AppShell = ({ onLogout, children }: { onLogout: () => void; children: ReactNode }) => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const { clinics, activeClinic } = useClinics();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
-  const [canViewOverview, setCanViewOverview] = useState(false);
+  const canViewOverview =
+    clinicCan(activeClinic, 'VIEW_CLINIC_REPORTS') || clinicCan(activeClinic, 'VIEW_CLINIC_SCHEDULE');
 
   useEffect(() => {
     getProfile()
@@ -93,11 +130,6 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
         setDisplayName(profile.displayName);
         setEmail(profile.email || '');
       })
-      .catch(() => undefined);
-    getMyClinic()
-      .then((clinic) =>
-        setCanViewOverview(clinicCan(clinic, 'VIEW_CLINIC_REPORTS') || clinicCan(clinic, 'VIEW_CLINIC_SCHEDULE'))
-      )
       .catch(() => undefined);
   }, []);
 
@@ -122,6 +154,11 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
           </div>
           <span className="text-[15px] font-semibold tracking-tight">TestPsikolog</span>
         </div>
+        {clinics.length > 1 ? (
+          <div className="mb-4 px-1">
+            <ClinicSwitcher />
+          </div>
+        ) : null}
         <nav className="flex flex-col gap-0.5" aria-label="Ana menü">
           {PRIMARY_NAV.map((item) => (
             <SidebarLink key={item.to} item={item} />
@@ -155,12 +192,18 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
           </div>
           <span className="text-sm font-semibold">TestPsikolog</span>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={toggleTheme} aria-label={themeLabel}>
-          <ThemeIcon />
-        </Button>
+        <div className="flex items-center gap-1">
+          <ClinicSwitcher compact />
+          <Button variant="ghost" size="icon-sm" onClick={toggleTheme} aria-label={themeLabel}>
+            <ThemeIcon />
+          </Button>
+        </div>
       </header>
 
-      <main className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>
+      {/* Aktif klinik değişince sayfa baştan yüklenir; her ekran yeni klinikle kendi verisini çeker. */}
+      <main key={activeClinic?.id ?? 'no-clinic'} className="min-w-0 flex-1 pb-20 md:pb-0">
+        {children}
+      </main>
 
       <nav
         className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-0 border-t border-solid bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"

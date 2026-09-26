@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ConfirmProvider } from './contexts/ConfirmDialog';
+import { ClinicProvider } from './contexts/ClinicContext';
 import { AppShell } from './components/AppShell';
 import { Login } from './pages/Login';
 import { Today } from './pages/Today';
@@ -118,22 +119,24 @@ function App() {
 
   return (
     <AppProviders>
-      <Router>
-        <AppShell onLogout={() => setToken(null)}>
-          <Routes>
-            <Route path="/" element={<Today />} />
-            <Route path="/danisanlar" element={<ClientsList />} />
-            <Route path="/takvim" element={<Calendar />} />
-            <Route path="/odemeler" element={<Payments />} />
-            <Route path="/raporlar" element={<Reports />} />
-            <Route path="/klinik" element={<ClinicPage />} />
-            <Route path="/klinik-raporu" element={<ClinicOverviewPage />} />
-            <Route path="/hesap" element={<Account />} />
-            <Route path="/client/:id" element={<ClientDetail />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AppShell>
-      </Router>
+      <ClinicProvider>
+        <Router>
+          <AppShell onLogout={() => setToken(null)}>
+            <Routes>
+              <Route path="/" element={<Today />} />
+              <Route path="/danisanlar" element={<ClientsList />} />
+              <Route path="/takvim" element={<Calendar />} />
+              <Route path="/odemeler" element={<Payments />} />
+              <Route path="/raporlar" element={<Reports />} />
+              <Route path="/klinik" element={<ClinicPage />} />
+              <Route path="/klinik-raporu" element={<ClinicOverviewPage />} />
+              <Route path="/hesap" element={<Account />} />
+              <Route path="/client/:id" element={<ClientDetail />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AppShell>
+        </Router>
+      </ClinicProvider>
     </AppProviders>
   );
 }

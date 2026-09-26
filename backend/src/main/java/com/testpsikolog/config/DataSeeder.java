@@ -112,12 +112,12 @@ public class DataSeeder implements ApplicationRunner {
             long owner = members.get(0);
             ClinicResponse clinic = clinicService.create(owner, new CreateClinicRequest(clinicNames.get(index)));
             if (!extraRooms.get(index).isEmpty()) {
-                clinicService.addRoom(owner, new CreateRoomRequest(extraRooms.get(index), null));
+                clinicService.addRoom(owner, clinic.id(), new CreateRoomRequest(extraRooms.get(index), null));
             }
             for (int member = 1; member < members.size(); member++) {
                 clinicService.join(members.get(member), new JoinClinicRequest(clinic.inviteCode()));
             }
-            clinicRooms.add(clinicService.listRooms(owner).stream().map(ClinicRoomResponse::id).toList());
+            clinicRooms.add(clinicService.listRooms(owner, clinic.id()).stream().map(ClinicRoomResponse::id).toList());
         }
 
         int clientCount = 0;
@@ -139,6 +139,7 @@ public class DataSeeder implements ApplicationRunner {
                         1500 + random.nextInt(8) * 250,
                         null,
                         phone,
+                        null,
                         null,
                         null
                 )));

@@ -1,5 +1,6 @@
 package com.testpsikolog.dto;
 
+/** clinicId: boşsa değişmez; 0 = kişisel (klinik yok); aksi halde psikoloğun üyesi olduğu klinik. */
 public record UpdateClientRequest(
         String email,
         String name,
@@ -8,6 +9,7 @@ public record UpdateClientRequest(
         String password,
         String phone,
         String emergencyName,
-        String emergencyPhone
+        String emergencyPhone,
+        Long clinicId
 ) {
 }

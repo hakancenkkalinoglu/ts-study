@@ -75,6 +75,7 @@ export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment
   const displayMeetLink = appointment?.googleMeetLink ?? meetLink;
   const availability = useRoomAvailability(
     isOpen && !!appointment,
+    appointment?.clinicId,
     formData.appointmentDate || (appointment ? getInitialFormData(appointment).appointmentDate : ''),
     formData.appointmentDate ? formData.appointmentTime : appointment ? getInitialFormData(appointment).appointmentTime : '',
     sessionDuration(formData.appointmentDate ? formData.durationMinutes : appointment?.durationMinutes),
@@ -95,10 +96,19 @@ export const UpdateAppointmentModal = ({ isOpen, onClose, onSuccess, appointment
     getGoogleAuthStatus()
       .then(({ connected }) => setGoogleConnected(connected))
       .catch(() => setGoogleConnected(false));
-    getClinicRooms()
+  }, [isOpen]);
+
+  // Oda seçimi randevunun kliniğinin odalarıyla sınırlı (klinik yoksa oda yok).
+  const appointmentClinicId = appointment?.clinicId ?? null;
+  useEffect(() => {
+    if (!isOpen || !appointmentClinicId) {
+      setRooms([]);
+      return;
+    }
+    getClinicRooms(appointmentClinicId)
       .then(setRooms)
       .catch(() => setRooms([]));
-  }, [isOpen]);
+  }, [isOpen, appointmentClinicId]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

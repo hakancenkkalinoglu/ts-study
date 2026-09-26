@@ -101,11 +101,9 @@ public class AppointmentService {
         int duration = ScheduleInputs.requireDuration(input.durationMinutes());
         Integer sessionFee = ScheduleInputs.requireNonNegativeFee(input.sessionFee());
         Long roomId = normalizeRoomId(input.roomId());
-        Long clinicId = null;
-        if (roomId != null) {
-            clinicService.requireOwnedRoom(userId, roomId);
-            clinicId = clinicService.clinicIdForUser(userId);
-        }
+        // K6: randevunun kliniği danışandan gelir (kişisel danışan = klinik yok), odası o klinikten olmalı.
+        Long clinicId = clientService.clinicIdOf(clientId);
+        clinicService.requireRoomInClinic(clinicId, roomId);
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
         if (!CANCELLED.equals(status)) {
@@ -151,13 +149,14 @@ public class AppointmentService {
         );
     }
 
-    public List<AppointmentResponse> getAll(long userId, String scope) {
-        return getAll(userId, scope, null, null);
-    }
-
-    public List<AppointmentResponse> getAll(long userId, String scope, String from, String to) {
+    /**
+     * scope=clinic: seçilen kliniğin takvimi (birden fazla kliniği olan psikolog clinicId vermeli). Klinikler
+     * birbirini görmez: kliniğin üyelerinin başka klinikteki ya da kişisel randevuları klinik, oda, danışan bilgisi
+     * olmadan yalnızca "Kapalı" bloğu olarak gelir, çünkü psikoloğun takvimi ortaktır ve o saat dolu sayılmalıdır.
+     */
+    public List<AppointmentResponse> getAll(long userId, String scope, Long requestedClinicId, String from, String to) {
         boolean clinicScope = "clinic".equalsIgnoreCase(scope);
-        Long clinicId = clinicScope ? clinicService.clinicIdForUser(userId) : null;
+        Long clinicId = clinicScope ? clinicService.resolveClinicId(userId, requestedClinicId) : null;
         boolean ranged = from != null && !from.isBlank() && to != null && !to.isBlank();
         String rangeFilter = ranged ? " AND a.appointmentDate BETWEEN ? AND ?" : "";
         String ownerFilter = clinicId != null
@@ -174,7 +173,55 @@ public class AppointmentService {
                 APPOINTMENT_MAPPER,
                 args.toArray()
         );
+        if (clinicId != null) {
+            return clinicView(rows, userId, clinicId);
+        }
         return markMine(rows, userId);
+    }
+
+    private static List<AppointmentResponse> clinicView(List<AppointmentResponse> rows, long userId, long clinicId) {
+        List<AppointmentResponse> result = new ArrayList<>();
+        for (AppointmentResponse row : rows) {
+            if (Objects.equals(row.clinicId(), clinicId)) {
+                result.addAll(markMine(List.of(row), userId));
+            } else if (!CANCELLED.equals(normalizeStatus(row.status()))) {
+                result.add(busyBlock(row));
+            }
+        }
+        return result;
+    }
+
+    /** Başka klinikteki ya da kişisel randevunun bu klinikte görünen hâli: yalnızca kimin ne zaman dolu olduğu. */
+    private static AppointmentResponse busyBlock(AppointmentResponse row) {
+        return new AppointmentResponse(
+                row.id(),
+                0,
+                row.appointmentDate(),
+                row.appointmentTime(),
+                "Kapalı",
+                0,
+                "scheduled",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                row.therapistUserId(),
+                row.therapistName(),
+                row.durationMinutes(),
+                null,
+                null,
+                null,
+                null,
+                false
+        );
     }
 
     public List<AppointmentResponse> getUpcoming(long userId, int hours) {
@@ -183,6 +230,7 @@ public class AppointmentService {
         ZonedDateTime now = ZonedDateTime.now(zone);
         List<AppointmentResponse> mine = getAll(
                 userId,
+                null,
                 null,
                 now.toLocalDate().toString(),
                 now.toLocalDate().plusDays(4).toString()
@@ -250,10 +298,12 @@ public class AppointmentService {
         Long requestedRoomId = data.roomId() == null ? current.roomId() : normalizeRoomId(data.roomId());
         if (!Objects.equals(requestedRoomId, current.roomId())) {
             if (requestedRoomId != null) {
-                clinicService.requireOwnedRoom(userId, requestedRoomId);
+                // K6: oda, danışanın şu anki kliniğinden olmalı; randevu da o klinikle etiketlenir.
+                Long clientClinicId = clientService.clinicIdOf(clientId);
+                clinicService.requireRoomInClinic(clientClinicId, requestedRoomId);
+                newClinicId = clientClinicId;
             }
             newRoomId = requestedRoomId;
-            newClinicId = clinicService.clinicIdForUser(userId);
         }
         String currentStatus = normalizeStatus(current.status());
         String newStatus = data.status() == null ? currentStatus : normalizeStatus(data.status());
@@ -360,6 +410,7 @@ public class AppointmentService {
     /** Verilen tarih, saat ve sürede kliniğin her odasının dolu olup olmadığı. Oda yoksa boş liste. */
     public List<RoomAvailabilityResponse> roomAvailability(
             long userId,
+            Long clinicId,
             String date,
             String time,
             Integer durationMinutes,
@@ -369,7 +420,7 @@ public class AppointmentService {
         String timeStr = ScheduleInputs.requireTime(time);
         int duration = ScheduleInputs.requireDuration(durationMinutes);
         List<RoomAvailabilityResponse> result = new ArrayList<>();
-        for (ClinicRoomResponse room : clinicService.listRooms(userId)) {
+        for (ClinicRoomResponse room : clinicService.listRooms(userId, clinicId)) {
             boolean busy = hasOverlap(loadRoomSlots(room.id(), dateStr, excludeAppointmentId), timeStr, duration);
             result.add(new RoomAvailabilityResponse(room.id(), room.name(), room.color(), busy));
         }

@@ -23,7 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ClientService {
 
     private static final String CLIENT_COLUMNS =
-            "id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt, updatedAt, "
+            "id, email, name, birthDate, agreedFee, phone, emergencyName, emergencyPhone, createdAt, updatedAt, clinicId, "
                     + AuditColumns.names("clients");
 
     private static final RowMapper<ClientResponse> CLIENT_MAPPER = (rs, rowNum) -> new ClientResponse(
@@ -38,7 +38,8 @@ public class ClientService {
             rs.getString("createdAt"),
             rs.getString("updatedAt"),
             rs.getString("createdByName"),
-            rs.getString("updatedByName")
+            rs.getString("updatedByName"),
+            rs.getObject("clinicId") == null ? null : rs.getLong("clinicId")
     );
 
     private static final Set<String> RISK_LEVELS = Set.of("low", "medium", "high");
@@ -46,10 +47,35 @@ public class ClientService {
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
+    private final ClinicService clinicService;
 
-    public ClientService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder) {
+    public ClientService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder, ClinicService clinicService) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
+        this.clinicService = clinicService;
+    }
+
+    /** Danışanın kliniği (null = kişisel). Randevunun kliniği buradan gelir. */
+    public Long clinicIdOf(long clientId) {
+        return jdbc.query(
+                "SELECT clinicId FROM clients WHERE id = ?",
+                rs -> rs.next() && rs.getObject("clinicId") != null ? rs.getLong("clinicId") : null,
+                clientId
+        );
+    }
+
+    /**
+     * Danışanın klinik seçimi: 0 = kişisel; verilmişse psikolog o kliniğin üyesi olmalı; boşsa kliniği yoksa
+     * kişisel, tek kliniği varsa o, birden fazlaysa 400 (danışan için klinik seçilmeli).
+     */
+    private Long resolveClientClinic(long userId, Long requested) {
+        if (requested != null && requested == 0L) {
+            return null;
+        }
+        if (requested == null && clinicService.clinicIdsForUser(userId).size() > 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Danışan için klinik seçin.");
+        }
+        return clinicService.resolveClinicId(userId, requested);
     }
 
     public List<ClientResponse> getAll(long userId, String search) {
@@ -87,7 +113,8 @@ public class ClientService {
     public long create(long userId, CreateClientRequest request) {
         String name = requireName(request.name());
         String email = normalizeOptionalEmail(request.email());
-        assertEmailAvailable(userId, email, null);
+        Long clinicId = resolveClientClinic(userId, request.clinicId());
+        assertEmailAvailable(userId, clinicId, email, null);
         String hashed = null;
         if (request.password() != null && !request.password().isBlank()) {
             hashed = passwordEncoder.encode(request.password());
@@ -96,8 +123,8 @@ public class ClientService {
         int agreedFee = requestedFee == null ? 2000 : requestedFee;
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt, createdBy, updatedBy)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text(), ?, ?)
+                INSERT INTO clients (email, name, birthDate, agreedFee, password, userId, phone, emergencyName, emergencyPhone, createdAt, updatedAt, createdBy, updatedBy, clinicId)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, utc_now_text(), utc_now_text(), ?, ?, ?)
                 RETURNING id
                 """,
                 Long.class,
@@ -111,25 +138,40 @@ public class ClientService {
                 blankToNull(request.emergencyName()),
                 blankToNull(request.emergencyPhone()),
                 userId,
-                userId
+                userId,
+                clinicId
         );
         return id == null ? 0L : id;
     }
 
+    @Transactional
     public int update(long userId, long id, UpdateClientRequest data) {
         if (!ownsClient(userId, id)) {
             return 0;
         }
         ScheduleInputs.requireNonNegativeFee(data.agreedFee());
         String name = data.name() == null ? null : requireName(data.name());
+        Long currentClinic = clinicIdOf(id);
+        boolean clinicChange = false;
+        Long newClinic = currentClinic;
+        if (data.clinicId() != null) {
+            newClinic = data.clinicId() == 0L ? null : clinicService.resolveClinicId(userId, data.clinicId());
+            clinicChange = !java.util.Objects.equals(newClinic, currentClinic);
+        }
         boolean emailProvided = data.email() != null;
         String email = emailProvided ? normalizeOptionalEmail(data.email()) : null;
         if (emailProvided) {
-            assertEmailAvailable(userId, email, id);
+            assertEmailAvailable(userId, newClinic, email, id);
+        } else if (clinicChange) {
+            String stored = jdbc.query("SELECT email FROM clients WHERE id = ?", rs -> rs.next() ? rs.getString("email") : null, id);
+            assertEmailAvailable(userId, newClinic, stored == null ? null : stored.toLowerCase(Locale.ROOT), id);
         }
         String hashed = null;
         if (data.password() != null && !data.password().isBlank()) {
             hashed = passwordEncoder.encode(data.password());
+        }
+        if (clinicChange) {
+            moveClientToClinic(id, newClinic);
         }
         return jdbc.update(
                 """
@@ -161,6 +203,27 @@ public class ClientService {
                 userId,
                 id,
                 userId
+        );
+    }
+
+    /**
+     * Danışanın kliniğini değiştirir. Gelecekteki randevular yeni kliniğe geçer ve yeni klinikte olmayan odadan
+     * çıkar; geçmiş randevular eski klinik etiketini korur (raporlar bozulmasın).
+     */
+    private void moveClientToClinic(long clientId, Long newClinic) {
+        jdbc.update("UPDATE clients SET clinicId = ? WHERE id = ?", newClinic, clientId);
+        jdbc.update(
+                """
+                UPDATE appointments
+                SET clinicId = ?,
+                    roomId = CASE WHEN roomId IN (SELECT id FROM clinic_rooms WHERE clinicId = ?) THEN roomId ELSE NULL END,
+                    updatedAt = utc_now_text()
+                WHERE clientId = ?
+                  AND appointmentDate >= to_char(now() AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD')
+                """,
+                newClinic,
+                newClinic,
+                clientId
         );
     }
 
@@ -223,23 +286,26 @@ public class ClientService {
         return normalized;
     }
 
-    private void assertEmailAvailable(long userId, String email, Long excludeClientId) {
+    /** E-posta psikolog ve klinik bazında tektir: aynı kişi iki klinikte (ya da kişisel) ayrı kayıt olabilir. */
+    private void assertEmailAvailable(long userId, Long clinicId, String email, Long excludeClientId) {
         if (email == null) {
             return;
         }
         Long found;
         if (excludeClientId == null) {
             found = jdbc.query(
-                    "SELECT id FROM clients WHERE userId = ? AND lower(email) = ? LIMIT 1",
+                    "SELECT id FROM clients WHERE userId = ? AND COALESCE(clinicId, 0) = ? AND lower(email) = ? LIMIT 1",
                     rs -> rs.next() ? rs.getLong("id") : null,
                     userId,
+                    clinicId == null ? 0L : clinicId,
                     email
             );
         } else {
             found = jdbc.query(
-                    "SELECT id FROM clients WHERE userId = ? AND lower(email) = ? AND id <> ? LIMIT 1",
+                    "SELECT id FROM clients WHERE userId = ? AND COALESCE(clinicId, 0) = ? AND lower(email) = ? AND id <> ? LIMIT 1",
                     rs -> rs.next() ? rs.getLong("id") : null,
                     userId,
+                    clinicId == null ? 0L : clinicId,
                     email,
                     excludeClientId
             );

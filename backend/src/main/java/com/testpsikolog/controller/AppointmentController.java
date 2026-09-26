@@ -57,13 +57,14 @@ public class AppointmentController {
 
     @GetMapping("/appointments/room-availability")
     public List<RoomAvailabilityResponse> getRoomAvailability(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
             @RequestParam("date") String date,
             @RequestParam("time") String time,
             @RequestParam(value = "duration", required = false) Integer duration,
             @RequestParam(value = "excludeAppointmentId", required = false) Long excludeAppointmentId
     ) {
         long userId = currentUserService.requireUser().id();
-        return appointmentService.roomAvailability(userId, date, time, duration, excludeAppointmentId);
+        return appointmentService.roomAvailability(userId, clinicId, date, time, duration, excludeAppointmentId);
     }
 
     @GetMapping("/appointments/upcoming")
@@ -76,11 +77,12 @@ public class AppointmentController {
     @GetMapping("/appointments")
     public List<AppointmentResponse> getAllAppointments(
             @RequestParam(value = "scope", required = false) String scope,
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to
     ) {
         long userId = currentUserService.requireUser().id();
-        return appointmentService.getAll(userId, scope, from, to);
+        return appointmentService.getAll(userId, scope, clinicId, from, to);
     }
 
     @GetMapping("/appointments/{id}")

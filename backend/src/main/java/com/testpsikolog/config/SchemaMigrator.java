@@ -23,6 +23,7 @@ public class SchemaMigrator implements ApplicationRunner {
         createTables();
         addAuditColumns();
         addRiskColumns();
+        addClientClinicColumn();
         createIndexes();
         createOverlapConstraints();
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
@@ -339,11 +340,48 @@ public class SchemaMigrator implements ApplicationRunner {
         jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskUpdatedAt TEXT");
     }
 
+    /**
+     * Çoklu klinik (K6): danışan tek kliniğe ait (NULL = kişisel, klinik dışı). Randevunun kliniği
+     * danışandan gelir. Eski tek-klinik modelinde bir üyenin bütün danışanları kliniğine aitti; sütun
+     * ilk kez eklenirken bu durum aynen taşınır. Geçiş yalnızca bir kez çalışır, çünkü sonradan
+     * kişisel bırakılan danışanlar yeniden bağlanmamalı.
+     */
+    private void addClientClinicColumn() {
+        Integer existed = jdbc.query(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = 'clients' AND lower(column_name) = 'clinicid'
+                """,
+                rs -> rs.next() ? 1 : null
+        );
+        if (existed != null) {
+            return;
+        }
+        jdbc.execute("ALTER TABLE clients ADD COLUMN clinicId BIGINT");
+        jdbc.update(
+                """
+                UPDATE clients c SET clinicId = m.clinicId
+                FROM clinic_members m
+                WHERE m.userId = c.userId
+                """
+        );
+        jdbc.update(
+                """
+                UPDATE appointments a SET clinicId = c.clinicId
+                FROM clients c, clinic_members m
+                WHERE a.clientId = c.id AND a.clinicId IS NULL AND c.clinicId IS NOT NULL
+                  AND m.clinicId = c.clinicId AND m.userId = c.userId
+                  AND a.appointmentDate >= substr(m.createdAt, 1, 10)
+                """
+        );
+    }
+
     private void createIndexes() {
         List<String> indexes = List.of(
                 "CREATE INDEX IF NOT EXISTS ix_app_users_email ON app_users(email)",
                 "CREATE INDEX IF NOT EXISTS ix_app_users_username ON app_users(username)",
                 "CREATE INDEX IF NOT EXISTS ix_clients_user ON clients(userId)",
+                "CREATE INDEX IF NOT EXISTS ix_clients_clinic ON clients(clinicId)",
                 "CREATE INDEX IF NOT EXISTS ix_appointments_client_date ON appointments(clientId, appointmentDate)",
                 "CREATE INDEX IF NOT EXISTS ix_appointments_room_date ON appointments(roomId, appointmentDate)",
                 "CREATE INDEX IF NOT EXISTS ix_appointments_date ON appointments(appointmentDate)",
@@ -368,13 +406,13 @@ public class SchemaMigrator implements ApplicationRunner {
                 "ux_clinic_invitations_email",
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_clinic_invitations_email ON clinic_invitations(clinicId, email)"
         );
+        // K6: bir kullanıcı birden fazla kliniğe üye olabilir, (clinicId, userId) birincil anahtarı yeter.
+        jdbc.execute("DROP INDEX IF EXISTS ux_clinic_members_user");
+        // K6: aynı e-posta aynı psikoloğun farklı kliniklerindeki (ve kişisel) kayıtlarında ayrı ayrı olabilir.
+        jdbc.execute("DROP INDEX IF EXISTS ux_clients_user_email");
         createUniqueIndex(
-                "ux_clinic_members_user",
-                "CREATE UNIQUE INDEX IF NOT EXISTS ux_clinic_members_user ON clinic_members(userId)"
-        );
-        createUniqueIndex(
-                "ux_clients_user_email",
-                "CREATE UNIQUE INDEX IF NOT EXISTS ux_clients_user_email ON clients(userId, lower(email)) WHERE email IS NOT NULL"
+                "ux_clients_user_clinic_email",
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_clients_user_clinic_email ON clients(userId, COALESCE(clinicId, 0), lower(email)) WHERE email IS NOT NULL"
         );
     }
 

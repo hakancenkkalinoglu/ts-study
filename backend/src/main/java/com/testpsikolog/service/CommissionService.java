@@ -68,8 +68,8 @@ public class CommissionService {
         return percent == null ? BigDecimal.ZERO : percent;
     }
 
-    public CommissionOverviewResponse overview(long userId) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.SET_COMMISSION);
+    public CommissionOverviewResponse overview(long userId, Long clinicId) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.SET_COMMISSION);
         String today = today();
         List<CommissionMemberResponse> members = new ArrayList<>();
         for (ClinicMemberResponse member : clinic.members()) {
@@ -85,29 +85,29 @@ public class CommissionService {
     }
 
     @Transactional
-    public CommissionOverviewResponse setDefault(long userId, SetCommissionRequest request) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.SET_COMMISSION);
+    public CommissionOverviewResponse setDefault(long userId, Long clinicId, SetCommissionRequest request) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.SET_COMMISSION);
         BigDecimal percent = requirePercent(request);
         insert(clinic.id(), null, percent, resolveDate(request));
-        return overview(userId);
+        return overview(userId, clinicId);
     }
 
     @Transactional
-    public CommissionOverviewResponse setForMember(long userId, long memberUserId, SetCommissionRequest request) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.SET_COMMISSION);
+    public CommissionOverviewResponse setForMember(long userId, Long clinicId, long memberUserId, SetCommissionRequest request) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.SET_COMMISSION);
         requireMember(clinic, memberUserId);
         BigDecimal percent = request == null ? null : request.percent();
         if (percent != null) {
             validatePercent(percent);
         }
         insert(clinic.id(), memberUserId, percent, resolveDate(request));
-        return overview(userId);
+        return overview(userId, clinicId);
     }
 
     /** Varsayılanı günceller ve psikolog bazlı istisnaları aynı tarihten itibaren kaldırır. */
     @Transactional
-    public CommissionOverviewResponse applyToAll(long userId, SetCommissionRequest request) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.SET_COMMISSION);
+    public CommissionOverviewResponse applyToAll(long userId, Long clinicId, SetCommissionRequest request) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.SET_COMMISSION);
         BigDecimal percent = requirePercent(request);
         String validFrom = resolveDate(request);
         insert(clinic.id(), null, percent, validFrom);
@@ -119,7 +119,7 @@ public class CommissionService {
         for (Long memberId : customized) {
             insert(clinic.id(), memberId, null, validFrom);
         }
-        return overview(userId);
+        return overview(userId, clinicId);
     }
 
     private boolean hasCustomRate(long clinicId, long userId, String date) {

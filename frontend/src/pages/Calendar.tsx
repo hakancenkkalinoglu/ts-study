@@ -30,6 +30,7 @@ import { BlockedSlotModal, type BlockedSlotModalState } from '../components/Bloc
 import { UpdateAppointmentModal } from '../components/UpdateAppointmentModal';
 import { appointmentStatus, sessionDuration, therapistColor } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useClinics } from '../contexts/ClinicContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Lock, Plus, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -54,7 +55,7 @@ type DragDraft = {
 
 const clinicSafeLabel = (apt: AppointmentWithClient): string => {
   if (apt.mine === false) {
-    return apt.roomName || 'Seans';
+    return apt.roomName || apt.title || 'Seans';
   }
   return apt.clientName || apt.title || 'Randevu';
 };
@@ -206,6 +207,7 @@ const visibleRange = (viewMode: ViewMode, currentDate: Date) => {
 
 export const Calendar = () => {
   const { showToast } = useToast();
+  const { clinics } = useClinics();
   const chooserRef = useRef<HTMLDivElement>(null);
   const [currentDate, setCurrentDate] = useState(() => parseStoredDate(readCalendarState()?.currentDate));
   const [viewMode, setViewMode] = useState<ViewMode>(
@@ -782,6 +784,10 @@ export const Calendar = () => {
   };
 
   const cardStyle = (apt: AppointmentWithClient) => {
+    // Başka klinikteki ya da kişisel randevu bu klinikte yalnızca gri "Kapalı" bloğu olarak görünür.
+    if (apt.mine === false && !apt.roomId && apt.title === 'Kapalı') {
+      return { background: 'var(--muted-foreground)' };
+    }
     const room = apt.roomColor || undefined;
     const therapist = therapistColor(apt.therapistUserId);
     const background = room || therapist;
@@ -931,6 +937,11 @@ export const Calendar = () => {
                         <span className="time-event-time">{formatTime(item.apt.appointmentTime)}</span>
                         <span className="time-event-title">{clinicSafeLabel(item.apt)}</span>
                         {item.apt.roomName ? <span className="time-event-meta">{item.apt.roomName}</span> : null}
+                        {calendarScope === 'mine' && clinics.length > 1 && item.apt.clinicId ? (
+                          <span className="time-event-meta">
+                            {clinics.find((c) => c.id === item.apt.clinicId)?.name}
+                          </span>
+                        ) : null}
                         {calendarScope === 'clinic' && item.apt.therapistName ? (
                           <span className="time-event-meta">{item.apt.therapistName}</span>
                         ) : null}

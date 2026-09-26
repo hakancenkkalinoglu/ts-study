@@ -6,6 +6,7 @@ import { sessionDuration, sessionDurationOptions } from '../types';
 import { istanbulTodayYmd } from '../utils/dates';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { roomHint, roomLabel } from '../utils/rooms';
+import { useClinics } from '../contexts/ClinicContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Field, FormError, Input, NativeSelect } from '@/components/ui/input';
@@ -37,6 +38,7 @@ export const AddAppointmentModal = ({
   initialTime,
   initialDuration,
 }: AddAppointmentModalProps) => {
+  const { clinics } = useClinics();
   const [searchTerm, setSearchTerm] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [searching, setSearching] = useState(false);
@@ -44,6 +46,7 @@ export const AddAppointmentModal = ({
   const [formData, setFormData] = useState({
     clientId: 0,
     selectedClientName: '',
+    clientClinicId: null as number | null,
     appointmentDate: initialDate || istanbulTodayYmd(),
     appointmentTime: initialTime || '09:00',
     title: '',
@@ -57,6 +60,7 @@ export const AddAppointmentModal = ({
   const debouncedSearch = useDebounce(searchTerm, 300);
   const availability = useRoomAvailability(
     isOpen,
+    formData.clientClinicId,
     formData.appointmentDate,
     formData.appointmentTime,
     sessionDuration(formData.durationMinutes)
@@ -99,11 +103,19 @@ export const AddAppointmentModal = ({
       setDropdownOpen(false);
       setClients([]);
       setError(null);
-      getClinicRooms()
-        .then(setRooms)
-        .catch(() => setRooms([]));
     }
   }, [isOpen]);
+
+  // Oda seçimi seçilen danışanın kliniğinin odalarıyla sınırlı (kişisel danışanda oda yok).
+  useEffect(() => {
+    if (!isOpen || !formData.clientClinicId) {
+      setRooms([]);
+      return;
+    }
+    getClinicRooms(formData.clientClinicId)
+      .then(setRooms)
+      .catch(() => setRooms([]));
+  }, [isOpen, formData.clientClinicId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -120,13 +132,15 @@ export const AddAppointmentModal = ({
       ...prev,
       clientId: client.id,
       selectedClientName: client.name || client.email || 'İsimsiz',
+      clientClinicId: client.clinicId ?? null,
+      roomId: 0,
     }));
     setSearchTerm('');
     setDropdownOpen(false);
   };
 
   const handleClearClient = () => {
-    setFormData((prev) => ({ ...prev, clientId: 0, selectedClientName: '' }));
+    setFormData((prev) => ({ ...prev, clientId: 0, selectedClientName: '', clientClinicId: null, roomId: 0 }));
     setSearchTerm('');
   };
 
@@ -151,6 +165,7 @@ export const AddAppointmentModal = ({
       setFormData({
         clientId: 0,
         selectedClientName: '',
+        clientClinicId: null,
         appointmentDate: istanbulTodayYmd(),
         appointmentTime: '09:00',
         title: '',
@@ -224,6 +239,11 @@ export const AddAppointmentModal = ({
                               <span className="block truncate text-sm font-medium">{c.name || c.email || 'İsimsiz'}</span>
                               {c.email && c.name ? (
                                 <span className="block truncate text-xs text-muted-foreground">{c.email}</span>
+                              ) : null}
+                              {clinics.length > 1 ? (
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {clinics.find((clinic) => clinic.id === c.clinicId)?.name ?? 'Kişisel'}
+                                </span>
                               ) : null}
                             </span>
                           </button>

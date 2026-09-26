@@ -6,6 +6,7 @@ import com.testpsikolog.dto.ClinicMemberResponse;
 import com.testpsikolog.dto.ClinicReportResponse;
 import com.testpsikolog.dto.ClinicReportResponse.TherapistReport;
 import com.testpsikolog.dto.ClinicResponse;
+import com.testpsikolog.dto.MyClinicEarningsResponse;
 import com.testpsikolog.dto.SharePaymentResponse;
 import com.testpsikolog.util.ScheduleInputs;
 import java.math.BigDecimal;
@@ -47,8 +48,8 @@ public class ClinicReportService {
     }
 
     /** Klinik sahibi için oda ücreti raporu: kim ne kadar borçlu, ne kadar ödedi. Tahsilat/net kazanç içermez. */
-    public ClinicFeeReportResponse feeReport(long userId, String month) {
-        ClinicResponse clinic = clinicService.requirePermission(userId, ClinicPermission.VIEW_CLINIC_REPORTS);
+    public ClinicFeeReportResponse feeReport(long userId, Long clinicId, String month) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.VIEW_CLINIC_REPORTS);
         YearMonth ym = parseMonth(month);
         String start = ym.atDay(1).toString();
         String end = ym.atEndOfMonth().toString();
@@ -106,8 +107,8 @@ public class ClinicReportService {
     }
 
     /** Yalnızca çağıran psikologun kendi kazancı ve oda payı durumu. */
-    public ClinicReportResponse myEarnings(long userId, String from, String to) {
-        ClinicResponse clinic = clinicService.getMine(userId);
+    public ClinicReportResponse myEarnings(long userId, Long clinicId, String from, String to) {
+        ClinicResponse clinic = clinicService.getMine(userId, clinicId);
         if (clinic == null) {
             return null;
         }
@@ -151,6 +152,22 @@ public class ClinicReportService {
             sharePaid = sharePaid.add(rowPaid);
         }
         return new ClinicReportResponse(start, end, sessions, paid, pending, share, sharePaid, share.subtract(sharePaid), therapists);
+    }
+
+    /**
+     * Psikoloğun üye olduğu her klinik için ayrı kazanç raporu (K6). Oranlar klinik başına farklı olduğundan
+     * toplam burada hesaplanmaz, her klinik kendi oranıyla ayrı hesaplanır; toplamı arayüz toplar.
+     */
+    public List<MyClinicEarningsResponse> myEarningsAll(long userId, String from, String to) {
+        List<MyClinicEarningsResponse> result = new ArrayList<>();
+        for (Long clinicId : clinicService.clinicIdsForUser(userId)) {
+            ClinicResponse clinic = clinicService.getMine(userId, clinicId);
+            ClinicReportResponse report = myEarnings(userId, clinicId, from, to);
+            if (clinic != null && report != null) {
+                result.add(new MyClinicEarningsResponse(clinic.id(), clinic.name(), report));
+            }
+        }
+        return result;
     }
 
     /** Odalı, iptal olmayan seansları psikolog bazında toplar. */

@@ -1,5 +1,6 @@
 package com.testpsikolog.dto;
 
+/** clinicId: boşsa tek kliniği olan psikologda o klinik, kliniği yoksa kişisel; 0 = kişisel (klinik yok). */
 public record CreateClientRequest(
         String email,
         String name,
@@ -8,6 +9,7 @@ public record CreateClientRequest(
         String password,
         String phone,
         String emergencyName,
-        String emergencyPhone
+        String emergencyPhone,
+        Long clinicId
 ) {
 }
