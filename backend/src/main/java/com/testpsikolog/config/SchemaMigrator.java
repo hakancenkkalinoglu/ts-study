@@ -22,6 +22,7 @@ public class SchemaMigrator implements ApplicationRunner {
         createFunctions();
         createTables();
         addAuditColumns();
+        addRiskColumns();
         createIndexes();
         createOverlapConstraints();
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
@@ -325,6 +326,17 @@ public class SchemaMigrator implements ApplicationRunner {
             String owner = "(SELECT c.userId FROM clients c WHERE c.id = " + table + ".clientId)";
             jdbc.update("UPDATE " + table + " SET createdBy = " + owner + " WHERE createdBy IS NULL");
         }
+    }
+
+    /**
+     * Risk işareti (P5): sağlık verisi. Yalnızca /api/clients/{id}/risk ucundan okunup yazılır,
+     * bilerek CLIENT_COLUMNS ve başka hiçbir listeye / takvim sorgusuna eklenmez.
+     * riskLevel: low / medium / high, NULL = işaret yok.
+     */
+    private void addRiskColumns() {
+        jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskLevel TEXT");
+        jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskNote TEXT");
+        jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskUpdatedAt TEXT");
     }
 
     private void createIndexes() {

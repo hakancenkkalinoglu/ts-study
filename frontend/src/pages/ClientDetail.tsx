@@ -53,6 +53,7 @@ import {
 } from '../types';
 import { SessionPackages } from '../components/SessionPackages';
 import { ClientInventories } from '../components/ClientInventories';
+import { ClientRisk } from '../components/ClientRisk';
 import { istanbulTodayYmd } from '../utils/dates';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -685,6 +686,8 @@ export const ClientDetail = () => {
           <InfoItem label="Son güncelleyen">{client.updatedByName || '–'}</InfoItem>
         </dl>
       </Card>
+
+      <ClientRisk clientId={client.id} />
 
       <div
         className="mb-5 flex gap-1 overflow-x-auto border-0 border-b border-solid [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

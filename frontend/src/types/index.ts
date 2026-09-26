@@ -13,6 +13,21 @@ export type Client = {
   updatedByName?: string | null;
 };
 
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export const RISK_LEVELS: { value: RiskLevel; label: string }[] = [
+  { value: 'low', label: 'Düşük' },
+  { value: 'medium', label: 'Orta' },
+  { value: 'high', label: 'Yüksek' },
+];
+
+/** Danışanın risk işareti (sağlık verisi). Yalnızca danışanın psikoloğu görür, listelerde dönmez. */
+export type ClientRisk = {
+  level: RiskLevel | null;
+  note: string | null;
+  updatedAt: string | null;
+};
+
 export type CreateClientInput = {
   name: string;
   email?: string;

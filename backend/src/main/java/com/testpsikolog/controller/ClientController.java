@@ -1,12 +1,14 @@
 package com.testpsikolog.controller;
 
 import com.testpsikolog.dto.ClientResponse;
+import com.testpsikolog.dto.ClientRiskResponse;
 import com.testpsikolog.dto.CreateClientRequest;
 import com.testpsikolog.dto.CreateNoteRequest;
 import com.testpsikolog.dto.DeletedResponse;
 import com.testpsikolog.dto.IdResponse;
 import com.testpsikolog.dto.NoteResponse;
 import com.testpsikolog.dto.UpdateClientRequest;
+import com.testpsikolog.dto.UpdateClientRiskRequest;
 import com.testpsikolog.dto.UpdateNoteRequest;
 import com.testpsikolog.dto.UpdatedResponse;
 import com.testpsikolog.service.ClientService;
@@ -86,6 +88,26 @@ public class ClientController {
     public UpdatedResponse updateClient(@PathVariable long id, @RequestBody UpdateClientRequest request) {
         long userId = currentUserService.requireUser().id();
         int updated = clientService.update(userId, id, request);
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
+        }
+        return new UpdatedResponse(updated);
+    }
+
+    @GetMapping("/clients/{id}/risk")
+    public ClientRiskResponse getClientRisk(@PathVariable long id) {
+        long userId = currentUserService.requireUser().id();
+        ClientRiskResponse risk = clientService.getRisk(userId, id);
+        if (risk == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
+        }
+        return risk;
+    }
+
+    @PutMapping("/clients/{id}/risk")
+    public UpdatedResponse updateClientRisk(@PathVariable long id, @RequestBody UpdateClientRiskRequest request) {
+        long userId = currentUserService.requireUser().id();
+        int updated = clientService.setRisk(userId, id, request);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
         }

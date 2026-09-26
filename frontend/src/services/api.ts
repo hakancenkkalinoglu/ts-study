@@ -1,6 +1,8 @@
 import axios from 'axios';
 import type {
   Client,
+  ClientRisk,
+  RiskLevel,
   CreateClientInput,
   Note,
   CreateNoteInput,
@@ -194,6 +196,20 @@ export const createClient = async (data: CreateClientInput): Promise<{ id: numbe
 
 export const updateClient = async (id: number, data: Partial<CreateClientInput>): Promise<{ updated: number }> => {
   const response = await api.put<{ updated: number }>(`/clients/${id}`, data);
+  return response.data;
+};
+
+export const getClientRisk = async (id: number): Promise<ClientRisk> => {
+  const response = await api.get<ClientRisk>(`/clients/${id}/risk`);
+  return response.data;
+};
+
+/** level boş (null) gönderilirse risk işareti kaldırılır. */
+export const updateClientRisk = async (
+  id: number,
+  data: { level: RiskLevel | null; note?: string }
+): Promise<{ updated: number }> => {
+  const response = await api.put<{ updated: number }>(`/clients/${id}/risk`, data);
   return response.data;
 };
 

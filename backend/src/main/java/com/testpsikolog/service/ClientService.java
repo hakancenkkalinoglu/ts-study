@@ -1,12 +1,16 @@
 package com.testpsikolog.service;
 
 import com.testpsikolog.dto.ClientResponse;
+import com.testpsikolog.dto.ClientRiskResponse;
 import com.testpsikolog.dto.CreateClientRequest;
 import com.testpsikolog.dto.UpdateClientRequest;
+import com.testpsikolog.dto.UpdateClientRiskRequest;
 import com.testpsikolog.util.AttachmentFiles;
 import com.testpsikolog.util.AuditColumns;
 import com.testpsikolog.util.ScheduleInputs;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -36,6 +40,9 @@ public class ClientService {
             rs.getString("createdByName"),
             rs.getString("updatedByName")
     );
+
+    private static final Set<String> RISK_LEVELS = Set.of("low", "medium", "high");
+    private static final int RISK_NOTE_MAX = 500;
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
@@ -157,6 +164,47 @@ public class ClientService {
         );
     }
 
+    /** Danışanın psikoloğu dışında kimse okuyamaz: danışan yoksa veya başkasınınsa null döner. */
+    public ClientRiskResponse getRisk(long userId, long clientId) {
+        List<ClientRiskResponse> rows = jdbc.query(
+                "SELECT riskLevel, riskNote, riskUpdatedAt FROM clients WHERE id = ? AND userId = ?",
+                (rs, rowNum) -> new ClientRiskResponse(
+                        rs.getString("riskLevel"),
+                        rs.getString("riskNote"),
+                        rs.getString("riskUpdatedAt")
+                ),
+                clientId,
+                userId
+        );
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** Seviye boş gönderilirse işaret kaldırılır (not da silinir). */
+    public int setRisk(long userId, long clientId, UpdateClientRiskRequest data) {
+        String level = data.level() == null ? "" : data.level().trim().toLowerCase(Locale.ROOT);
+        if (level.isEmpty()) {
+            return jdbc.update(
+                    "UPDATE clients SET riskLevel = NULL, riskNote = NULL, riskUpdatedAt = NULL WHERE id = ? AND userId = ?",
+                    clientId,
+                    userId
+            );
+        }
+        if (!RISK_LEVELS.contains(level)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Risk seviyesi geçerli değil.");
+        }
+        String note = blankToNull(data.note());
+        if (note != null && note.length() > RISK_NOTE_MAX) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Risk notu en fazla " + RISK_NOTE_MAX + " karakter olabilir.");
+        }
+        return jdbc.update(
+                "UPDATE clients SET riskLevel = ?, riskNote = ?, riskUpdatedAt = utc_now_text() WHERE id = ? AND userId = ?",
+                level,
+                note,
+                clientId,
+                userId
+        );
+    }
+
     private static String requireName(String name) {
         if (name == null || name.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ad soyad zorunludur.");
@@ -168,7 +216,7 @@ public class ClientService {
         if (email == null || email.isBlank()) {
             return null;
         }
-        String normalized = email.trim().toLowerCase();
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
         if (!normalized.contains("@") || normalized.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-posta geçerli değil.");
         }
