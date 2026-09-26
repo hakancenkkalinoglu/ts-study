@@ -1,4 +1,4 @@
-# claude-*@test.local test hesaplarını, test kliniğini ve danışanları kurar. Tekrar çalıştırmak güvenlidir
+﻿# claude-*@test.local test hesaplarını, test kliniğini ve danışanları kurar. Tekrar çalıştırmak güvenlidir
 # (olanı atlar). Backend çalışıyor olmalı, CLAUDE_TEST_PASSWORD tanımlı olmalı.
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\TestLib.ps1"

@@ -1,4 +1,4 @@
-# Türkçe locale tuzağı (I -> ı) regresyon testi: büyük "I" içeren e-postalar küçük "i" olarak normalleşmeli.
+﻿# Türkçe locale tuzağı (I -> ı) regresyon testi: büyük "I" içeren e-postalar küçük "i" olarak normalleşmeli.
 # Kapsam: kayıt, giriş, çift kayıt, danışan e-postası, klinik daveti. Kendi açtığı kayıtları siler.
 # Önce setup-test-accounts.ps1 çalıştırılmış, backend açık ve CLAUDE_TEST_PASSWORD tanımlı olmalı.
 $ErrorActionPreference = 'Stop'

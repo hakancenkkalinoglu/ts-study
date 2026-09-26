@@ -1,4 +1,4 @@
-# Test betikleri için ortak yardımcılar. Doğrudan çalıştırılmaz, diğer betikler dot-source eder.
+﻿# Test script'leri için ortak yardımcılar. Doğrudan çalıştırılmaz, diğer script'ler dot-source eder.
 # Şifre repoda tutulmaz: CLAUDE_TEST_PASSWORD kullanıcı ortam değişkeninden okunur.
 
 $script:Base = if ($env:TEST_API_BASE) { $env:TEST_API_BASE } else { 'http://localhost:3000' }
@@ -28,7 +28,8 @@ function Call($method, $path, $token, $body) {
   }
   try {
     $r = Invoke-WebRequest @req
-    return @{ Status = [int]$r.StatusCode; Body = $r.Content }
+    # Sunucu charset belirtmeden JSON döndürür; PowerShell 5.1 bunu Latin-1 sanıp Türkçe karakteri bozar. Ham baytlar UTF-8 çözülür.
+    return @{ Status = [int]$r.StatusCode; Body = [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray()) }
   } catch {
     $resp = $_.Exception.Response
     if ($null -eq $resp) { throw }

@@ -1,4 +1,4 @@
-# P5 risk işareti uçlarının testi: GET/PUT /api/clients/{id}/risk.
+﻿# P5 risk işareti uçlarının testi: GET/PUT /api/clients/{id}/risk.
 # Önce setup-test-accounts.ps1 çalıştırılmış, backend açık ve CLAUDE_TEST_PASSWORD tanımlı olmalı.
 # Test sonunda risk işaretlerini temizler, veri bırakmaz.
 $ErrorActionPreference = 'Stop'

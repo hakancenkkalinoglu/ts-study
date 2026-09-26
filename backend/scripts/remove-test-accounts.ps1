@@ -1,4 +1,4 @@
-# claude-*@test.local hesaplarını ve test kliniğini siler (kayıtları da gider).
+﻿# claude-*@test.local hesaplarını ve test kliniğini siler (kayıtları da gider).
 # Sıra: psikologlar hesaplarını siler, sonra sahip kliniği silip hesabını siler.
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\TestLib.ps1"
