@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ConfirmProvider } from './contexts/ConfirmDialog';
-import { ClinicProvider } from './contexts/ClinicContext';
+import { ClinicProvider, useClinics } from './contexts/ClinicContext';
+import { isSecretary } from './types';
 import { AppShell } from './components/AppShell';
 import { Login } from './pages/Login';
 import { Today } from './pages/Today';
@@ -18,6 +19,12 @@ import { Account } from './pages/Account';
 import { InviteAccept } from './pages/InviteAccept';
 import { NotFound } from './pages/NotFound';
 import { exchangeGoogleAuth, getStoredToken, setStoredToken } from './services/api';
+
+// Sekreterin kendi randevusu, danışanı ya da paketi olmadığı için "Bugün" sayfası anlamsız kalır.
+const HomeRoute = () => {
+  const { activeClinic } = useClinics();
+  return isSecretary(activeClinic) ? <Navigate to="/takvim" replace /> : <Today />;
+};
 
 const readAuthCodeFromUrl = (): string | null => {
   const params = new URLSearchParams(window.location.search);
@@ -123,7 +130,7 @@ function App() {
         <Router>
           <AppShell onLogout={() => setToken(null)}>
             <Routes>
-              <Route path="/" element={<Today />} />
+              <Route path="/" element={<HomeRoute />} />
               <Route path="/danisanlar" element={<ClientsList />} />
               <Route path="/takvim" element={<Calendar />} />
               <Route path="/odemeler" element={<Payments />} />

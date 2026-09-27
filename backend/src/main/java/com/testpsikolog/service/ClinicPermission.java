@@ -17,11 +17,17 @@ public enum ClinicPermission {
     SET_COMMISSION,
     MANAGE_PAYMENTS,
     VIEW_CLINIC_SCHEDULE,
-    VIEW_CLINIC_REPORTS;
+    VIEW_CLINIC_REPORTS,
+    VIEW_CLINIC_CLIENTS,
+    CREATE_APPOINTMENTS,
+    ASSIGN_CLIENTS;
 
     public static Set<ClinicPermission> forRole(String role) {
         if ("owner".equals(role)) {
             return EnumSet.allOf(ClinicPermission.class);
+        }
+        if ("secretary".equals(role)) {
+            return EnumSet.of(VIEW_CLINIC_SCHEDULE, VIEW_CLINIC_CLIENTS, CREATE_APPOINTMENTS, ASSIGN_CLIENTS);
         }
         return EnumSet.noneOf(ClinicPermission.class);
     }

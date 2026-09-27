@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { clearStoredToken, getProfile } from '@/services/api';
-import { clinicCan } from '@/types';
+import { clinicCan, isSecretary } from '@/types';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useClinics } from '@/contexts/ClinicContext';
 import { Button } from '@/components/ui/button';
@@ -121,8 +121,9 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
   const { clinics, activeClinic } = useClinics();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const secretaryUser = isSecretary(activeClinic);
   const canViewOverview =
-    clinicCan(activeClinic, 'VIEW_CLINIC_REPORTS') || clinicCan(activeClinic, 'VIEW_CLINIC_SCHEDULE');
+    !secretaryUser && (clinicCan(activeClinic, 'VIEW_CLINIC_REPORTS') || clinicCan(activeClinic, 'VIEW_CLINIC_SCHEDULE'));
 
   useEffect(() => {
     getProfile()
@@ -133,9 +134,13 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
       .catch(() => undefined);
   }, []);
 
-  const secondaryNav = canViewOverview
-    ? [SECONDARY_NAV[0], OVERVIEW_NAV, ...SECONDARY_NAV.slice(1)]
-    : SECONDARY_NAV;
+  // Sekreterin kendi danışanı, paketi ya da ödemesi olmadığı için o sayfalar boş/anlamsız kalır.
+  const primaryNav = secretaryUser ? PRIMARY_NAV.filter((item) => item.to === '/takvim') : PRIMARY_NAV;
+  const secondaryNav = secretaryUser
+    ? SECONDARY_NAV.filter((item) => item.to === '/hesap' || item.to === '/klinik')
+    : canViewOverview
+      ? [SECONDARY_NAV[0], OVERVIEW_NAV, ...SECONDARY_NAV.slice(1)]
+      : SECONDARY_NAV;
 
   const handleLogout = () => {
     clearStoredToken();
@@ -160,7 +165,7 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
           </div>
         ) : null}
         <nav className="flex flex-col gap-0.5" aria-label="Ana menü">
-          {PRIMARY_NAV.map((item) => (
+          {primaryNav.map((item) => (
             <SidebarLink key={item.to} item={item} />
           ))}
           <div className="mx-3 my-3 h-px bg-border" />
@@ -209,7 +214,7 @@ export const AppShell = ({ onLogout, children }: { onLogout: () => void; childre
         className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-0 border-t border-solid bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
         aria-label="Ana menü"
       >
-        {PRIMARY_NAV.map((item) => (
+        {primaryNav.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

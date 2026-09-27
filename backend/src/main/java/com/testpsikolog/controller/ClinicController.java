@@ -135,6 +135,16 @@ public class ClinicController {
         return clinicService.kickMember(userId, clinicId, memberUserId);
     }
 
+    @PutMapping("/clinic/members/{memberUserId}/role")
+    public ClinicResponse setMemberRole(
+            @PathVariable long memberUserId,
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody com.testpsikolog.dto.UpdateMemberRoleRequest request
+    ) {
+        long userId = currentUserService.requireUser().id();
+        return clinicService.setMemberRole(userId, clinicId, memberUserId, request == null ? null : request.role());
+    }
+
     @PostMapping("/clinic/transfer")
     public ClinicResponse transfer(
             @RequestParam(value = "clinicId", required = false) Long clinicId,

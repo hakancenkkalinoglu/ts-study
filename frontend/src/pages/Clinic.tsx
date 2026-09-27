@@ -26,6 +26,7 @@ import {
   leaveClinic,
   renameClinic,
   rotateClinicInvite,
+  setClinicMemberRole,
   transferClinicOwnership,
   updateClinicRoom,
   apiErrorMessage,
@@ -34,6 +35,7 @@ import { clinicCan } from '../types';
 import type { Clinic } from '../types';
 import { ClinicCommissions } from '../components/ClinicCommissions';
 import { ClinicInvitations } from '../components/ClinicInvitations';
+import { UnassignedClients } from '../components/UnassignedClients';
 import { useConfirm } from '../contexts/ConfirmDialog';
 import { useToast } from '../contexts/ToastContext';
 import { useClinics } from '../contexts/ClinicContext';
@@ -81,6 +83,7 @@ export const ClinicPage = () => {
   const canInvite = clinicCan(clinic, 'INVITE_MEMBERS');
   const canManageMembers = clinicCan(clinic, 'MANAGE_MEMBERS');
   const canSetCommission = clinicCan(clinic, 'SET_COMMISSION');
+  const canAssignClients = clinicCan(clinic, 'ASSIGN_CLIENTS');
 
   const loadClinic = useCallback(async () => {
     try {
@@ -236,6 +239,15 @@ export const ClinicPage = () => {
       setClinic(await rotateClinicInvite());
     } catch (err) {
       setError(apiErrorMessage(err, 'Kod yenilenemedi.'));
+    }
+  };
+
+  const handleRoleChange = async (userId: number, name: string, role: 'member' | 'secretary') => {
+    setError(null);
+    try {
+      setClinic(await setClinicMemberRole(userId, role));
+    } catch (err) {
+      setError(apiErrorMessage(err, `${name} için rol değiştirilemedi.`));
     }
   };
 
@@ -417,8 +429,10 @@ export const ClinicPage = () => {
                     <Crown className="size-3" />
                     Kurucu
                   </Badge>
+                ) : member.role === 'secretary' ? (
+                  <Badge variant="neutral">Sekreter</Badge>
                 ) : (
-                  <Badge>Üye</Badge>
+                  <Badge>Psikolog</Badge>
                 )}
                 {canManageMembers && member.role !== 'owner' ? (
                   <DropdownMenu>
@@ -428,7 +442,7 @@ export const ClinicPage = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {canManageClinic ? (
+                      {canManageClinic && member.role !== 'secretary' ? (
                         <>
                           <DropdownMenuItem onSelect={() => void handleTransfer(member.userId, member.name)}>
                             <Crown />
@@ -437,6 +451,18 @@ export const ClinicPage = () => {
                           <DropdownMenuSeparator />
                         </>
                       ) : null}
+                      {member.role === 'secretary' ? (
+                        <DropdownMenuItem onSelect={() => void handleRoleChange(member.userId, member.name, 'member')}>
+                          <UsersRound />
+                          Psikolog yap
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onSelect={() => void handleRoleChange(member.userId, member.name, 'secretary')}>
+                          <UsersRound />
+                          Sekreter yap
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem destructive onSelect={() => void handleKick(member.userId, member.name)}>
                         <UserMinus />
                         Klinikten çıkar
@@ -526,6 +552,12 @@ export const ClinicPage = () => {
         </Card>
       </div>
 
+      {canAssignClients ? (
+        <div className="mt-6">
+          <UnassignedClients clinic={clinic} />
+        </div>
+      ) : null}
+
       {canInvite || canSetCommission ? (
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           {canInvite ? <ClinicInvitations /> : null}
@@ -574,7 +606,9 @@ export const ClinicPage = () => {
               <p className="m-0 mt-1 text-sm text-muted-foreground">
                 {isOwner
                   ? 'Klinik, odalar ve üyelikler silinir. Randevular kalır.'
-                  : 'Klinik takvimini ve odaları artık göremezsiniz. Danışanlarınız sizde kalır.'}
+                  : clinic.role === 'secretary'
+                    ? 'Klinik takvimini artık göremezsiniz.'
+                    : 'Klinik takvimini ve odaları artık göremezsiniz. Danışanlarınız kliniğe bağlı kalır ama sahipsiz olur; sahip ya da sekreter başka bir psikoloğa atayana kadar kimse ulaşamaz.'}
               </p>
             </div>
             <Button variant="destructive" onClick={isOwner ? handleDeleteClinic : handleLeave}>

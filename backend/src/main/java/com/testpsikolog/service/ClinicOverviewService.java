@@ -36,12 +36,13 @@ public class ClinicOverviewService {
         String start = from == null || from.isBlank() ? monthStart() : ScheduleInputs.requireDate(from);
         String end = to == null || to.isBlank() ? monthEnd() : ScheduleInputs.requireDate(to);
 
+        // K7: seans, oluşturulduğu andaki psikoloğa (a.userId) sayılır; danışan sonradan başka psikoloğa
+        // devredilse bile geçmiş istatistik değişmez.
         List<Row> rows = jdbc.query(
                 """
                 SELECT a.appointmentDate, COALESCE(a.status, 'scheduled') AS status,
-                       COALESCE(a.durationMinutes, 50) AS minutes, a.roomId, c.userId AS therapistId
+                       COALESCE(a.durationMinutes, 50) AS minutes, a.roomId, a.userId AS therapistId
                 FROM appointments a
-                INNER JOIN clients c ON c.id = a.clientId
                 WHERE a.clinicId = ? AND a.appointmentDate BETWEEN ? AND ?
                 """,
                 (rs, rowNum) -> new Row(

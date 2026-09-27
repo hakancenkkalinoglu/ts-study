@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { Loader2, Search, X } from 'lucide-react';
-import { apiErrorMessage, createAppointment, getAppointmentById, getClients, getClinicRooms } from '../services/api';
-import type { Client, AppointmentWithClient, ClinicRoom } from '../types';
-import { sessionDuration, sessionDurationOptions } from '../types';
+import {
+  apiErrorMessage,
+  createAppointment,
+  getAppointmentById,
+  getClients,
+  getClinicClients,
+  getClinicRooms,
+} from '../services/api';
+import type { Client, ClinicClient, AppointmentWithClient, ClinicRoom } from '../types';
+import { sessionDuration, sessionDurationOptions, isSecretary } from '../types';
 import { istanbulTodayYmd } from '../utils/dates';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { roomHint, roomLabel } from '../utils/rooms';
@@ -38,9 +45,10 @@ export const AddAppointmentModal = ({
   initialTime,
   initialDuration,
 }: AddAppointmentModalProps) => {
-  const { clinics } = useClinics();
+  const { clinics, activeClinic } = useClinics();
+  const secretaryMode = isSecretary(activeClinic);
   const [searchTerm, setSearchTerm] = useState('');
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<Array<Client | ClinicClient>>([]);
   const [searching, setSearching] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -66,17 +74,22 @@ export const AddAppointmentModal = ({
     sessionDuration(formData.durationMinutes)
   );
 
-  const fetchClients = useCallback(async (term: string) => {
-    setSearching(true);
-    try {
-      const data = await getClients(term.trim() || undefined);
-      setClients(data);
-    } catch {
-      setClients([]);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
+  const fetchClients = useCallback(
+    async (term: string) => {
+      setSearching(true);
+      try {
+        const data = secretaryMode
+          ? await getClinicClients(term.trim() || undefined)
+          : await getClients(term.trim() || undefined);
+        setClients(data);
+      } catch {
+        setClients([]);
+      } finally {
+        setSearching(false);
+      }
+    },
+    [secretaryMode]
+  );
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -127,12 +140,13 @@ export const AddAppointmentModal = ({
     }));
   }, [isOpen, initialDate, initialTime, initialDuration]);
 
-  const handleSelectClient = (client: Client) => {
+  const handleSelectClient = (client: Client | ClinicClient) => {
+    const clinicId = secretaryMode ? activeClinic?.id ?? null : (client as Client).clinicId ?? null;
     setFormData((prev) => ({
       ...prev,
       clientId: client.id,
       selectedClientName: client.name || client.email || 'İsimsiz',
-      clientClinicId: client.clinicId ?? null,
+      clientClinicId: clinicId,
       roomId: 0,
     }));
     setSearchTerm('');
@@ -161,7 +175,9 @@ export const AddAppointmentModal = ({
         roomId: formData.roomId || undefined,
         durationMinutes: sessionDuration(formData.durationMinutes),
       });
-      const createdAppointment = await getAppointmentById(result.id);
+      // Sekreter başkasının danışanına randevu açar; onu takip eden düzenleme ekranı yalnızca danışanın
+      // kendi psikoloğuna açık olduğu için sekreter modunda randevuyu tekrar çekmeye çalışmıyoruz.
+      const createdAppointment = secretaryMode ? null : await getAppointmentById(result.id);
       setFormData({
         clientId: 0,
         selectedClientName: '',
@@ -240,9 +256,13 @@ export const AddAppointmentModal = ({
                               {c.email && c.name ? (
                                 <span className="block truncate text-xs text-muted-foreground">{c.email}</span>
                               ) : null}
-                              {clinics.length > 1 ? (
+                              {secretaryMode ? (
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  {clinics.find((clinic) => clinic.id === c.clinicId)?.name ?? 'Kişisel'}
+                                  {(c as ClinicClient).therapistName ?? ''}
+                                </span>
+                              ) : clinics.length > 1 ? (
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {clinics.find((clinic) => clinic.id === (c as Client).clinicId)?.name ?? 'Kişisel'}
                                 </span>
                               ) : null}
                             </span>

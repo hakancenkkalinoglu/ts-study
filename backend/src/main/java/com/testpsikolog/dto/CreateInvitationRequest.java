@@ -1,4 +1,5 @@
 package com.testpsikolog.dto;
 
-public record CreateInvitationRequest(String email) {
+/** @param role "member" (psikolog) ya da "secretary" (sekreter); boşsa "member" varsayılır. */
+public record CreateInvitationRequest(String email, String role) {
 }

@@ -92,8 +92,8 @@ public class AppointmentService {
     }
 
     @Transactional
-    public List<Long> create(long userId, long clientId, CreateAppointmentRequest input) {
-        clientService.requireOwned(userId, clientId);
+    public List<Long> create(long callerId, long clientId, CreateAppointmentRequest input) {
+        long therapistId = resolveTherapistForCreate(callerId, clientId);
         String dateStr = ScheduleInputs.requireDate(input.appointmentDate());
         String timeStr = input.appointmentTime() == null || input.appointmentTime().isBlank()
                 ? "09:00"
@@ -107,8 +107,8 @@ public class AppointmentService {
         int isPaid = Boolean.TRUE.equals(input.isPaid()) ? 1 : 0;
         String status = normalizeStatus(input.status());
         if (!CANCELLED.equals(status)) {
-            scheduleService.lockTherapistSchedule(userId);
-            assertNoConflict(userId, dateStr, timeStr, duration, roomId, null);
+            scheduleService.lockTherapistSchedule(therapistId);
+            assertNoConflict(therapistId, dateStr, timeStr, duration, roomId, null);
         }
         Long id = jdbc.queryForObject(
                 """
@@ -121,7 +121,7 @@ public class AppointmentService {
                 """,
                 Long.class,
                 clientId,
-                userId,
+                therapistId,
                 dateStr,
                 timeStr,
                 blankToNull(input.title()),
@@ -131,10 +131,34 @@ public class AppointmentService {
                 roomId,
                 duration,
                 sessionFee,
-                userId,
-                userId
+                callerId,
+                callerId
         );
         return List.of(id == null ? 0L : id);
+    }
+
+    /**
+     * K7: normalde randevuyu danışanın kendi psikoloğu oluşturur. Sekreter, kliniğinde CREATE_APPOINTMENTS
+     * yetkisiyle başka bir üyenin danışanına randevu açabilir; randevu yine o üyenin (psikoloğun) adına
+     * kaydedilir (takvim kilidi, çakışma kontrolü ve Google senkronizasyonu ona ait olsun diye), kim oluşturduğu
+     * yalnızca createdBy'de görünür.
+     */
+    private long resolveTherapistForCreate(long callerId, long clientId) {
+        long ownerId = clientService.ownerUserId(clientId);
+        if (ownerId == callerId) {
+            return callerId;
+        }
+        Long clinicId = clientService.clinicIdOf(clientId);
+        if (clinicId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
+        }
+        clinicService.requirePermission(callerId, clinicId, ClinicPermission.CREATE_APPOINTMENTS);
+        return ownerId;
+    }
+
+    /** Sekreterin randevu sonrası Google Calendar adımını hangi psikoloğun hesabıyla yapacağı. */
+    public long resolveTherapistUserId(long clientId) {
+        return clientService.ownerUserId(clientId);
     }
 
     public List<AppointmentResponse> getByClientId(long userId, long clientId) {

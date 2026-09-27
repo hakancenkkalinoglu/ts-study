@@ -13,6 +13,8 @@ import type {
   BlockedSlot,
   Clinic,
   ClinicRoom,
+  ClinicClient,
+  UnassignedClient,
   ClinicFeeReport,
   ClinicOverview,
   ClinicReport,
@@ -204,6 +206,25 @@ export const exchangeGoogleAuth = async (
 export const getClients = async (search?: string): Promise<Client[]> => {
   const params = search?.trim() ? { search: search.trim() } : {};
   const response = await api.get<Client[]>('/clients', { params });
+  return response.data;
+};
+
+/** Sekreter için: kliniğin tüm üyelerinin danışanları. */
+export const getClinicClients = async (search?: string): Promise<ClinicClient[]> => {
+  const params = search?.trim() ? { search: search.trim() } : {};
+  const response = await api.get<ClinicClient[]>('/clinic/clients', { params });
+  return response.data;
+};
+
+/** K7: bir üye ayrılınca/çıkarılınca kliniğe bağlı ama sahipsiz kalan danışanlar. */
+export const getUnassignedClients = async (): Promise<UnassignedClient[]> => {
+  const response = await api.get<UnassignedClient[]>('/clinic/clients/unassigned');
+  return response.data;
+};
+
+/** K7: sahipsiz bir danışanı kliniğin bir psikoloğuna atar. */
+export const assignClient = async (clientId: number, userId: number): Promise<{ updated: number }> => {
+  const response = await api.put<{ updated: number }>(`/clients/${clientId}/assign`, { userId });
   return response.data;
 };
 
@@ -455,13 +476,18 @@ export const kickClinicMember = async (memberUserId: number): Promise<Clinic> =>
   return response.data;
 };
 
+export const setClinicMemberRole = async (memberUserId: number, role: 'member' | 'secretary'): Promise<Clinic> => {
+  const response = await api.put<Clinic>(`/clinic/members/${memberUserId}/role`, { role });
+  return response.data;
+};
+
 export const transferClinicOwnership = async (userId: number): Promise<Clinic> => {
   const response = await api.post<Clinic>('/clinic/transfer', { userId });
   return response.data;
 };
 
-export const createClinicInvitation = async (email: string): Promise<Invitation> => {
-  const response = await api.post<Invitation>('/clinic/invitations', { email });
+export const createClinicInvitation = async (email: string, role: 'member' | 'secretary' = 'member'): Promise<Invitation> => {
+  const response = await api.post<Invitation>('/clinic/invitations', { email, role });
   return response.data;
 };
 

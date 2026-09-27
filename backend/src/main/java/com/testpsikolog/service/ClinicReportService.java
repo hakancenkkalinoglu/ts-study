@@ -175,18 +175,20 @@ public class ClinicReportService {
         List<Object> args = new ArrayList<>(List.of(clinic.id(), start, end));
         String userFilter = "";
         if (onlyUserId != null) {
-            userFilter = " AND c.userId = ?";
+            userFilter = " AND a.userId = ?";
             args.add(onlyUserId);
         }
+        // K7: pay, randevunun oluşturulduğu andaki psikoloğa (a.userId) göre hesaplanır, danışanın ŞU ANKİ
+        // sahibine (c.userId) göre değil; danışan başka psikoloğa devredilse bile geçmiş kazanç değişmez.
         List<Row> rows = jdbc.query(
                 """
                 SELECT a.appointmentDate, a.isPaid,
                        COALESCE(a.sessionFee, c.agreedFee, 0) AS amount,
-                       c.userId AS therapistId,
+                       a.userId AS therapistId,
                        COALESCE(NULLIF(u.displayName, ''), NULLIF(u.email, ''), u.username) AS therapistName
                 FROM appointments a
                 INNER JOIN clients c ON c.id = a.clientId
-                LEFT JOIN app_users u ON u.id = c.userId
+                LEFT JOIN app_users u ON u.id = a.userId
                 WHERE a.clinicId = ? AND a.roomId IS NOT NULL
                   AND COALESCE(a.status, 'scheduled') != 'cancelled'
                   AND a.appointmentDate BETWEEN ? AND ?

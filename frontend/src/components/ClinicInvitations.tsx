@@ -4,14 +4,17 @@ import { apiErrorMessage, createClinicInvitation, getClinicInvitations, revokeCl
 import type { Invitation } from '../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FormError, Input } from '@/components/ui/input';
+import { FormError, Input, NativeSelect } from '@/components/ui/input';
 
 const formatExpiry = (expiresAt: number) => new Date(expiresAt).toLocaleDateString('tr-TR');
 
-/** Yeni psikologu e-postayla davet eder. E-posta gönderilmez; oluşan bağlantı kopyalanıp iletilir. */
+const roleLabel = (role: string) => (role === 'secretary' ? 'Sekreter' : 'Psikolog');
+
+/** Yeni psikolog ya da sekreteri e-postayla davet eder. E-posta gönderilmez; oluşan bağlantı kopyalanıp iletilir. */
 export const ClinicInvitations = () => {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'member' | 'secretary'>('member');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<Invitation | null>(null);
@@ -34,7 +37,7 @@ export const ClinicInvitations = () => {
     setError(null);
     setSaving(true);
     try {
-      const created = await createClinicInvitation(email);
+      const created = await createClinicInvitation(email, role);
       setFresh(created);
       setCopied(false);
       setEmail('');
@@ -72,22 +75,33 @@ export const ClinicInvitations = () => {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Psikolog davet et</CardTitle>
+          <CardTitle>Üye davet et</CardTitle>
           <CardDescription className="mt-1">
-            E-posta adresine özel, 7 gün geçerli, tek kullanımlık bağlantı oluşturulur. Psikolog şifresini kendisi belirler.
+            E-posta adresine özel, 7 gün geçerli, tek kullanımlık bağlantı oluşturulur. Şifresini kendisi belirler.
+            Sekreter yalnızca randevu oluşturabilir; danışan notu, ücret ve rapor göremez.
           </CardDescription>
         </div>
         <MailPlus className="size-4 text-muted-foreground" />
       </CardHeader>
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 px-5 pt-3">
+      <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2 px-5 pt-3">
         <Input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="psikolog@ornek.com"
+          placeholder="ornek@ornek.com"
           aria-label="Davet edilecek e-posta"
+          className="min-w-[14rem] flex-1"
           required
         />
+        <NativeSelect
+          value={role}
+          onChange={(e) => setRole(e.target.value === 'secretary' ? 'secretary' : 'member')}
+          aria-label="Rol"
+          className="w-auto"
+        >
+          <option value="member">Psikolog</option>
+          <option value="secretary">Sekreter</option>
+        </NativeSelect>
         <Button type="submit" variant="outline" disabled={saving}>
           Davet oluştur
         </Button>
@@ -118,6 +132,7 @@ export const ClinicInvitations = () => {
           invitations.map((invitation) => (
             <li key={invitation.id} className="flex items-center gap-3 px-5 py-3">
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{invitation.email}</span>
+              <span className="text-xs text-muted-foreground">{roleLabel(invitation.role)}</span>
               <span className="text-xs text-muted-foreground">{formatExpiry(invitation.expiresAt)} tarihine kadar</span>
               <Button variant="ghost" size="icon-sm" onClick={() => void handleRevoke(invitation.id)} aria-label="Daveti iptal et">
                 <X />

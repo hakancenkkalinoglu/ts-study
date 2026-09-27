@@ -164,19 +164,43 @@ public class ClinicService {
         if (clinicId == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Davet kodu bulunamadı.");
         }
-        addMember(clinicId, userId);
+        addMember(clinicId, userId, "member");
         return loadClinic(clinicId, userId);
     }
 
-    public void addMember(long clinicId, long userId) {
+    public void addMember(long clinicId, long userId, String role) {
         if (isMember(clinicId, userId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Zaten bu kliniğin üyesisiniz.");
         }
         jdbc.update(
-                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, 'member', utc_now_text())",
+                "INSERT INTO clinic_members (clinicId, userId, role, createdAt) VALUES (?, ?, ?, utc_now_text())",
                 clinicId,
-                userId
+                userId,
+                "secretary".equals(role) ? "secretary" : "member"
         );
+    }
+
+    /** Sahip, sekreter <-> psikolog (member) rolleri arasında geçiş yapabilir. Sahiplik burada devredilmez. */
+    @Transactional
+    public ClinicResponse setMemberRole(long userId, Long clinicId, long memberUserId, String role) {
+        ClinicResponse clinic = requirePermission(userId, clinicId, ClinicPermission.MANAGE_MEMBERS);
+        if (memberUserId == userId) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kendi rolünüzü değiştiremezsiniz.");
+        }
+        String normalized = role == null ? "" : role.trim().toLowerCase(Locale.ROOT);
+        if (!"member".equals(normalized) && !"secretary".equals(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol geçerli değil.");
+        }
+        int updated = jdbc.update(
+                "UPDATE clinic_members SET role = ? WHERE clinicId = ? AND userId = ? AND role != 'owner'",
+                normalized,
+                clinic.id(),
+                memberUserId
+        );
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Üye bulunamadı.");
+        }
+        return loadClinic(clinic.id(), userId);
     }
 
     @Transactional
@@ -193,14 +217,16 @@ public class ClinicService {
     }
 
     /**
-     * Üyelik biterken (K6, Karar 7): gelecekteki randevular klinikten ve odadan çıkar, psikoloğun bu klinikteki
-     * danışanları kişisel olur (psikologda kalır). Geçmiş randevular klinik etiketini korur, raporlar bozulmaz.
+     * Üyelik biterken (K7): danışan kişisel olmaz, kliniğe bağlı kalır ama SAHİPSİZ kalır (sahip/sekreter başka
+     * bir psikoloğa atayana kadar kimse göremez, bkz. {@link ClientService#assign}). Gelecekteki randevular
+     * iptal edilir, klinik ve odadan çıkar. Geçmiş randevular klinik etiketini ve psikolog atfını (appointments.userId,
+     * danışanın şu anki sahibinden bağımsız) korur, raporlar bozulmaz.
      */
     private void releaseFutureRooms(long clinicId, long memberUserId) {
         jdbc.update(
                 """
                 UPDATE appointments
-                SET roomId = NULL, clinicId = NULL, updatedAt = utc_now_text()
+                SET status = 'cancelled', roomId = NULL, clinicId = NULL, updatedAt = utc_now_text()
                 WHERE (clinicId = ? OR roomId IN (SELECT id FROM clinic_rooms WHERE clinicId = ?))
                   AND appointmentDate >= to_char(now() AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD')
                   AND clientId IN (SELECT id FROM clients WHERE userId = ?)
@@ -209,7 +235,7 @@ public class ClinicService {
                 clinicId,
                 memberUserId
         );
-        jdbc.update("UPDATE clients SET clinicId = NULL WHERE clinicId = ? AND userId = ?", clinicId, memberUserId);
+        jdbc.update("UPDATE clients SET userId = NULL WHERE clinicId = ? AND userId = ?", clinicId, memberUserId);
     }
 
     @Transactional

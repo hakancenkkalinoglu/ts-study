@@ -67,6 +67,37 @@ public class ClientController {
         return clientService.getAll(userId, search);
     }
 
+    /** Sekreter için (K7): kliniğin tüm üyelerinin danışanları, randevu oluştururken kimin danışanı seçilebilir. */
+    @GetMapping("/clinic/clients")
+    public List<com.testpsikolog.dto.ClinicClientResponse> getClinicClients(
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestParam(value = "search", required = false) String search
+    ) {
+        long userId = currentUserService.requireUser().id();
+        return clientService.listForClinic(userId, clinicId, search);
+    }
+
+    /** K7: bir üye ayrılınca/çıkarılınca kliniğe bağlı ama sahipsiz kalan danışanlar. */
+    @GetMapping("/clinic/clients/unassigned")
+    public List<com.testpsikolog.dto.UnassignedClientResponse> getUnassignedClients(
+            @RequestParam(value = "clinicId", required = false) Long clinicId
+    ) {
+        long userId = currentUserService.requireUser().id();
+        return clientService.listUnassigned(userId, clinicId);
+    }
+
+    /** K7: sahipsiz bir danışanı kliniğin bir psikoloğuna atar. */
+    @PutMapping("/clients/{id}/assign")
+    public UpdatedResponse assignClient(
+            @PathVariable long id,
+            @RequestParam(value = "clinicId", required = false) Long clinicId,
+            @RequestBody com.testpsikolog.dto.AssignClientRequest request
+    ) {
+        long userId = currentUserService.requireUser().id();
+        clientService.assign(userId, clinicId, id, request == null ? null : request.userId());
+        return new UpdatedResponse(1);
+    }
+
     @GetMapping("/clients/{id}")
     public ClientResponse getClient(@PathVariable long id) {
         long userId = currentUserService.requireUser().id();

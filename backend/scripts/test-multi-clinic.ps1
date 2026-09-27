@@ -23,7 +23,7 @@ $t1 = Login $script:TestAccounts.Psy1        # X üyesi, testte Y'nin sahibi olu
 $t2 = Login $script:TestAccounts.Psy2        # yalnızca X üyesi
 $X = (J (Call 'GET' '/api/clinic' $tOwner $null)).clinic.id
 $xInvite = (J (Call 'GET' '/api/clinic' $tOwner $null)).clinic.inviteCode
-$Y = $null; $cX = $null; $cY = $null; $cP = $null; $c2 = $null; $tTmp = $null
+$Y = $null; $cX = $null; $cY = $null; $cP = $null; $c2 = $null; $tTmp = $null; $cid = $null
 
 # Önceki yarım kalmış çalıştırmalardan temizle
 foreach ($c in @(J (Call 'GET' '/api/clinics' $t1 $null))) {
@@ -142,7 +142,7 @@ try {
   $a = @(J (Call 'GET' "/api/clients/$cX/appointments" $t1 $null))[0]
   Check '7d X kliniğine geri alındı, randevu X etiketli' ($r.Status -eq 200 -and $a.clinicId -eq $X) "status=$($r.Status) clinicId=$($a.clinicId)"
 
-  # --- 8. klinikten ayrılan psikolog (Karar 7) ve kliniksiz psikolog kendi kliniğini kurar (Karar 8)
+  # --- 8. klinikten ayrılan psikolog (K7: danışan sahipsiz kalır, kişisel olmaz) ve kliniksiz psikolog kendi kliniğini kurar (Karar 8)
   $tmpEmail = "claude-k6-$n@test.local"
   $r = Call 'POST' '/api/auth/register' $null @{ email = $tmpEmail; password = $pw; displayName = 'Claude K6 Geçici' }
   $tTmp = (J $r).token
@@ -154,17 +154,22 @@ try {
   Appt $tTmp $cid $day2 '10:00' $xRoom | Out-Null
   $r = Call 'POST' '/api/clinic/leave' $tTmp $null
   Check '8c klinikten ayrıldı (200)' ($r.Status -eq 200) "status=$($r.Status) body=$($r.Body)"
-  Check '8d danışan psikologda kaldı ve kişisel oldu' ((J (Call 'GET' "/api/clients/$cid" $tTmp $null)).clinicId -eq $null) 'danışan hâlâ klinikli'
-  $apps = @(J (Call 'GET' "/api/clients/$cid/appointments" $tTmp $null))
+  Check '8d ayrılan artık danışana erişemez (404)' ((Call 'GET' "/api/clients/$cid" $tTmp $null).Status -eq 404) 'hâlâ erişebiliyor'
+  $unassigned = @(J (Call 'GET' "/api/clinic/clients/unassigned?clinicId=$X" $tOwner $null))
+  Check '8e danışan kliniğin sahipsizler listesinde (kişisel değil)' (@($unassigned | Where-Object { $_.id -eq $cid }).Count -eq 1) ($unassigned | ConvertTo-Json -Compress)
+  $psy1Id = (J (Call 'GET' '/api/auth/me' $t1 $null)).id
+  $r = Call 'PUT' "/api/clients/$cid/assign?clinicId=$X" $tOwner @{ userId = $psy1Id }
+  Check '8f sahip danışanı psikolog 1e atar (200)' ($r.Status -eq 200) "status=$($r.Status) body=$($r.Body)"
+  $apps = @(J (Call 'GET' "/api/clients/$cid/appointments" $t1 $null))
   $past = $apps | Where-Object { $_.appointmentDate -like '2020-*' }; $future = $apps | Where-Object { $_.appointmentDate -like '2031-*' }
-  Check '8e geçmiş randevu klinik etiketini korudu' ($past.clinicId -eq $X) "clinicId=$($past.clinicId)"
-  Check '8f gelecekteki randevu klinikten ve odadan çıktı' ($null -eq $future.clinicId -and $null -eq $future.roomId) "clinicId=$($future.clinicId) roomId=$($future.roomId)"
+  Check '8g geçmiş randevu klinik etiketini korudu' ($past.clinicId -eq $X) "clinicId=$($past.clinicId)"
+  Check '8h gelecekteki randevu iptal oldu, klinikten ve odadan çıktı' ($future.status -eq 'cancelled' -and $null -eq $future.clinicId -and $null -eq $future.roomId) "status=$($future.status) clinicId=$($future.clinicId) roomId=$($future.roomId)"
   $r = Call 'POST' '/api/clinic' $tTmp @{ name = "K6 Geçici Klinik $n" }
-  Check '8g kliniksiz psikolog kendi kliniğini kurar ve sahip olur' ($r.Status -eq 201 -and (J $r).role -eq 'owner') "status=$($r.Status) body=$($r.Body)"
+  Check '8i kliniksiz psikolog kendi kliniğini kurar ve sahip olur' ($r.Status -eq 201 -and (J $r).role -eq 'owner') "status=$($r.Status) body=$($r.Body)"
 }
 finally {
   # --- temizlik
-  foreach ($id in @($cX, $cY, $cP)) { if ($id) { Call 'DELETE' "/api/clients/$id" $t1 $null | Out-Null } }
+  foreach ($id in @($cX, $cY, $cP, $cid)) { if ($id) { Call 'DELETE' "/api/clients/$id" $t1 $null | Out-Null } }
   if ($c2) { Call 'DELETE' "/api/clients/$c2" $t2 $null | Out-Null }
   if ($Y) { Call 'DELETE' "/api/clinic?clinicId=$Y" $t1 $null | Out-Null }
   if ($tTmp) {

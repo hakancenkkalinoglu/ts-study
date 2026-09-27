@@ -129,23 +129,26 @@ public class AppointmentController {
         long userId = currentUserService.requireUser().id();
         List<Long> ids = appointmentService.create(userId, clientId, body);
         long id = ids.isEmpty() ? 0L : ids.get(0);
+        // K7: sekreter başkasının danışanına randevu açabilir; Google senkronizasyonu her zaman danışanın
+        // kendi psikoloğunun hesabıyla yapılır, sekreterin Google bağlantısı bu akışa karışmaz.
+        long therapistId = appointmentService.resolveTherapistUserId(clientId);
         String googleMeetLink = null;
         String googleHtmlLink = null;
-        if (googleCalendarService.isConnected(userId)) {
+        if (googleCalendarService.isConnected(therapistId)) {
             for (Long createdId : ids) {
                 try {
-                    AppointmentResponse appointment = appointmentService.getByIdWithClient(userId, createdId);
+                    AppointmentResponse appointment = appointmentService.getByIdWithClient(therapistId, createdId);
                     if (appointment == null) {
                         continue;
                     }
                     MeetResponse result = googleCalendarService.createCalendarEventWithMeet(
-                            userId,
+                            therapistId,
                             appointment,
                             appointment.durationMinutes(),
-                            authService.requireEmail(userId)
+                            authService.requireEmail(therapistId)
                     );
                     appointmentService.updateGoogleFields(
-                            userId,
+                            therapistId,
                             createdId,
                             result.eventId(),
                             result.meetLink(),

@@ -188,16 +188,41 @@ export type ClinicPermission =
   | 'SET_COMMISSION'
   | 'MANAGE_PAYMENTS'
   | 'VIEW_CLINIC_SCHEDULE'
-  | 'VIEW_CLINIC_REPORTS';
+  | 'VIEW_CLINIC_REPORTS'
+  | 'VIEW_CLINIC_CLIENTS'
+  | 'CREATE_APPOINTMENTS'
+  | 'ASSIGN_CLIENTS';
 
 export const clinicCan = (clinic: Clinic | null | undefined, permission: ClinicPermission): boolean =>
   Boolean(clinic?.permissions?.includes(permission));
 
+/** Sekreterin danışan sahibi olmadığı, yalnızca randevu oluşturabildiği rol. */
+export const isSecretary = (clinic: Clinic | null | undefined): boolean => clinic?.role === 'secretary';
+
 export type Invitation = {
   id: number;
   email: string;
+  role: string;
   expiresAt: number;
   inviteUrl: string | null;
+};
+
+/** Sekreterin randevu için seçebileceği, kliniğe ait bir danışan (hangi psikoloğun olduğuyla birlikte). */
+export type ClinicClient = {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  therapistUserId: number;
+  therapistName: string | null;
+};
+
+/** K7: bir psikolog ayrılınca/çıkarılınca kliniğe bağlı ama sahipsiz kalan danışan. */
+export type UnassignedClient = {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
 };
 
 export type InvitationPreview = {

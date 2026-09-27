@@ -40,6 +40,7 @@ public class InvitationService {
     private static final RowMapper<InvitationResponse> LIST_MAPPER = (rs, rowNum) -> new InvitationResponse(
             rs.getLong("id"),
             rs.getString("email"),
+            rs.getString("role"),
             rs.getLong("expiresAt"),
             null
     );
@@ -68,6 +69,7 @@ public class InvitationService {
         if (email.isBlank() || !email.contains("@") || email.length() > 120) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçerli bir e-posta girin.");
         }
+        String role = normalizeInvitableRole(request == null ? null : request.role());
         AuthUser existing = authService.findByLogin(email);
         if (existing != null && existing.id() != null && clinicService.isMember(clinic.id(), existing.id())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bu kişi zaten bu kliniğin üyesi.");
@@ -80,24 +82,36 @@ public class InvitationService {
         jdbc.update("DELETE FROM clinic_invitations WHERE clinicId = ? AND email = ?", clinic.id(), email);
         Long id = jdbc.queryForObject(
                 """
-                INSERT INTO clinic_invitations (clinicId, email, tokenHash, invitedBy, expiresAt, createdAt)
-                VALUES (?, ?, ?, ?, ?, utc_now_text()) RETURNING id
+                INSERT INTO clinic_invitations (clinicId, email, role, tokenHash, invitedBy, expiresAt, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, utc_now_text()) RETURNING id
                 """,
                 Long.class,
                 clinic.id(),
                 email,
+                role,
                 hash(token),
                 userId,
                 expiresAt
         );
         String base = appProperties.getFrontendUrl().replaceAll("/+$", "");
-        return new InvitationResponse(id == null ? 0L : id, email, expiresAt, base + "/invite/" + token);
+        return new InvitationResponse(id == null ? 0L : id, email, role, expiresAt, base + "/invite/" + token);
+    }
+
+    private static String normalizeInvitableRole(String role) {
+        String value = role == null ? "" : role.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) {
+            return "member";
+        }
+        if (!"member".equals(value) && !"secretary".equals(value)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol geçerli değil.");
+        }
+        return value;
     }
 
     public List<InvitationResponse> list(long userId, Long clinicId) {
         ClinicResponse clinic = clinicService.requirePermission(userId, clinicId, ClinicPermission.INVITE_MEMBERS);
         return jdbc.query(
-                "SELECT id, email, expiresAt FROM clinic_invitations WHERE clinicId = ? AND expiresAt >= ? ORDER BY id DESC",
+                "SELECT id, email, role, expiresAt FROM clinic_invitations WHERE clinicId = ? AND expiresAt >= ? ORDER BY id DESC",
                 LIST_MAPPER,
                 clinic.id(),
                 System.currentTimeMillis()
@@ -145,7 +159,7 @@ public class InvitationService {
         if (user == null || user.id() == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Hesap oluşturulamadı.");
         }
-        clinicService.addMember(invitation.clinicId(), user.id());
+        clinicService.addMember(invitation.clinicId(), user.id(), invitation.role());
         jdbc.update("DELETE FROM clinic_invitations WHERE id = ?", invitation.id());
         return login;
     }
@@ -156,7 +170,7 @@ public class InvitationService {
         }
         List<Invitation> found = jdbc.query(
                 """
-                SELECT i.id, i.clinicId, i.email, c.name AS clinicName
+                SELECT i.id, i.clinicId, i.email, i.role, c.name AS clinicName
                 FROM clinic_invitations i
                 INNER JOIN clinics c ON c.id = i.clinicId
                 WHERE i.tokenHash = ? AND i.expiresAt >= ?
@@ -165,6 +179,7 @@ public class InvitationService {
                         rs.getLong("id"),
                         rs.getLong("clinicId"),
                         rs.getString("email"),
+                        rs.getString("role"),
                         rs.getString("clinicName")
                 ),
                 hash(token.trim()),
@@ -185,6 +200,6 @@ public class InvitationService {
         }
     }
 
-    private record Invitation(long id, long clinicId, String email, String clinicName) {
+    private record Invitation(long id, long clinicId, String email, String role, String clinicName) {
     }
 }

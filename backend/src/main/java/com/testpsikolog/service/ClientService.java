@@ -2,6 +2,8 @@ package com.testpsikolog.service;
 
 import com.testpsikolog.dto.ClientResponse;
 import com.testpsikolog.dto.ClientRiskResponse;
+import com.testpsikolog.dto.ClinicClientResponse;
+import com.testpsikolog.dto.ClinicResponse;
 import com.testpsikolog.dto.CreateClientRequest;
 import com.testpsikolog.dto.UpdateClientRequest;
 import com.testpsikolog.dto.UpdateClientRiskRequest;
@@ -97,6 +99,120 @@ public class ClientService {
                 "SELECT " + CLIENT_COLUMNS + " FROM clients WHERE userId = ? ORDER BY name ASC",
                 CLIENT_MAPPER,
                 userId
+        );
+    }
+
+    /**
+     * Sekreter için (K7): kliniğin tüm üyelerinin danışanları, hangi psikoloğa ait olduğuyla birlikte.
+     * Not, risk ve geçmiş gibi hassas alanlar yok; yalnızca randevu oluşturmak için gerekli temel bilgiler.
+     */
+    public List<ClinicClientResponse> listForClinic(long userId, Long requestedClinicId, String search) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, requestedClinicId, ClinicPermission.VIEW_CLINIC_CLIENTS);
+        String pattern = search != null && !search.trim().isEmpty() ? "%" + search.trim() + "%" : null;
+        String filter = pattern != null ? " AND (c.name ILIKE ? OR c.email ILIKE ? OR c.phone ILIKE ?)" : "";
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(clinic.id());
+        if (pattern != null) {
+            args.add(pattern);
+            args.add(pattern);
+            args.add(pattern);
+        }
+        return jdbc.query(
+                """
+                SELECT c.id, c.name, c.email, c.phone, c.userId AS therapistUserId,
+                       COALESCE(NULLIF(u.displayName, ''), NULLIF(u.email, ''), u.username) AS therapistName
+                FROM clients c
+                INNER JOIN app_users u ON u.id = c.userId
+                WHERE c.clinicId = ?
+                """ + filter + " ORDER BY c.name ASC",
+                (rs, rowNum) -> new ClinicClientResponse(
+                        rs.getLong("id"),
+                        rs.getString("name"),
+                        rs.getString("email"),
+                        rs.getString("phone"),
+                        rs.getLong("therapistUserId"),
+                        rs.getString("therapistName")
+                ),
+                args.toArray()
+        );
+    }
+
+    /** Danışanın psikoloğu (sahibi). Danışan yoksa 404. */
+    public long ownerUserId(long clientId) {
+        Long ownerId = jdbc.query(
+                "SELECT userId FROM clients WHERE id = ?",
+                rs -> rs.next() ? rs.getLong("userId") : null,
+                clientId
+        );
+        if (ownerId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
+        }
+        return ownerId;
+    }
+
+    /** K7: bir psikolog klinikten ayrılınca/çıkarılınca kliniğe bağlı ama sahipsiz kalan danışanlar. */
+    public List<com.testpsikolog.dto.UnassignedClientResponse> listUnassigned(long userId, Long requestedClinicId) {
+        ClinicResponse clinic = clinicService.requirePermission(userId, requestedClinicId, ClinicPermission.ASSIGN_CLIENTS);
+        return jdbc.query(
+                "SELECT id, name, email, phone FROM clients WHERE clinicId = ? AND userId IS NULL ORDER BY name ASC",
+                (rs, rowNum) -> new com.testpsikolog.dto.UnassignedClientResponse(
+                        rs.getLong("id"),
+                        rs.getString("name"),
+                        rs.getString("email"),
+                        rs.getString("phone")
+                ),
+                clinic.id()
+        );
+    }
+
+    /** K7: sahipsiz bir danışanı kliniğin bir psikoloğuna atar (sekreter değil). Zaten atanmışsa 409. */
+    @Transactional
+    public void assign(long callerId, Long requestedClinicId, long clientId, Long newTherapistUserId) {
+        ClinicResponse clinic = clinicService.requirePermission(callerId, requestedClinicId, ClinicPermission.ASSIGN_CLIENTS);
+        if (newTherapistUserId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Atanacak psikolog gerekli.");
+        }
+        List<Boolean> unassigned = jdbc.query(
+                "SELECT userId FROM clients WHERE id = ? AND clinicId = ?",
+                rs -> {
+                    List<Boolean> result = new java.util.ArrayList<>();
+                    if (rs.next()) {
+                        result.add(rs.getObject("userId") == null);
+                    }
+                    return result;
+                },
+                clientId,
+                clinic.id()
+        );
+        if (unassigned.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Danışan bulunamadı.");
+        }
+        if (!unassigned.get(0)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Danışan zaten bir psikoloğa atanmış.");
+        }
+        String role = jdbc.query(
+                "SELECT role FROM clinic_members WHERE clinicId = ? AND userId = ?",
+                rs -> rs.next() ? rs.getString("role") : null,
+                clinic.id(),
+                newTherapistUserId
+        );
+        if (role == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seçilen kişi bu kliniğin üyesi değil.");
+        }
+        if ("secretary".equals(role)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Danışan bir sekretere atanamaz.");
+        }
+        String email = jdbc.query(
+                "SELECT lower(email) FROM clients WHERE id = ?",
+                rs -> rs.next() ? rs.getString(1) : null,
+                clientId
+        );
+        assertEmailAvailable(newTherapistUserId, clinic.id(), email, clientId);
+        jdbc.update(
+                "UPDATE clients SET userId = ?, updatedAt = utc_now_text(), updatedBy = ? WHERE id = ?",
+                newTherapistUserId,
+                callerId,
+                clientId
         );
     }
 

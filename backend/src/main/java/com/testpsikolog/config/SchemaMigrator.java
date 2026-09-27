@@ -24,6 +24,7 @@ public class SchemaMigrator implements ApplicationRunner {
         addAuditColumns();
         addRiskColumns();
         addClientClinicColumn();
+        addInvitationRoleColumn();
         createIndexes();
         createOverlapConstraints();
         jdbc.update("DELETE FROM auth_exchange_codes WHERE expiresAt < ?", System.currentTimeMillis());
@@ -338,6 +339,11 @@ public class SchemaMigrator implements ApplicationRunner {
         jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskLevel TEXT");
         jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskNote TEXT");
         jdbc.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS riskUpdatedAt TEXT");
+    }
+
+    /** Sekreter rolü (K7): davet hangi rolle kabul edilirse üyelik o rolle kurulur; eski davetler 'member' sayılır. */
+    private void addInvitationRoleColumn() {
+        jdbc.execute("ALTER TABLE clinic_invitations ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'member'");
     }
 
     /**

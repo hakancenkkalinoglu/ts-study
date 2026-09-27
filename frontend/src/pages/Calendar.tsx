@@ -304,6 +304,13 @@ export const Calendar = () => {
     void loadAppointments();
   }, [loadAppointments]);
 
+  // Sekreterin kendi randevusu olmaz, "Ben" görünümü hep boş kalır; klinik görünümüne sabitlenir.
+  useEffect(() => {
+    if (clinic?.role === 'secretary' && calendarScope !== 'clinic') {
+      setCalendarScope('clinic');
+    }
+  }, [clinic, calendarScope]);
+
   useEffect(() => {
     const next: StoredCalendarState = {
       viewMode,
@@ -1056,14 +1063,16 @@ export const Calendar = () => {
         <div className="flex flex-wrap items-center gap-2">
           {clinic ? (
             <>
-              <SegmentedControl
-                value={calendarScope}
-                onChange={setCalendarScope}
-                options={[
-                  { value: 'mine', label: 'Ben' },
-                  { value: 'clinic', label: 'Tüm klinik' },
-                ]}
-              />
+              {clinic.role === 'secretary' ? null : (
+                <SegmentedControl
+                  value={calendarScope}
+                  onChange={setCalendarScope}
+                  options={[
+                    { value: 'mine', label: 'Ben' },
+                    { value: 'clinic', label: 'Tüm klinik' },
+                  ]}
+                />
+              )}
               <NativeSelect
                 className="w-auto"
                 value={roomFilter}
