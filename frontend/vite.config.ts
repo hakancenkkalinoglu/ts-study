@@ -12,10 +12,15 @@ export default defineConfig({
     },
   },
   server: {
+    // Cloudflare Quick Tunnel ile test için (rastgele-isim.trycloudflare.com)
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        // Tünelde tarayıcı Origin'i trycloudflare adresi olur ve backend CORS'u 403 verir.
+        // Proxy'de Origin'i sabitleyerek backend'i değiştirmeden çözüyoruz.
+        headers: { Origin: 'http://localhost:5173' },
       },
     },
   },
